@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import './App.css'
 
@@ -19,24 +19,28 @@ type LifeItem = {
   layer: LayerId
   title: string
   note: string
-  parentId: string | null
+  parentIds: string[]
   status: Status
-  createdAt: string
-  updatedAt: string
+  createdDate: string
+  updatedDate: string
+  startDate: string
+  completedDate: string
+  scheduledDate: string
+  dueDate: string
 }
 
-type Draft = {
-  layer: LayerId
-  title: string
-  note: string
-  parentId: string
-  status: Status
-}
+type Draft = Omit<LifeItem, 'id'>
 
 type LifeData = {
-  version: 1
+  version: 2
   exportedAt?: string
   items: LifeItem[]
+}
+
+type LegacyItem = Partial<LifeItem> & {
+  parentId?: string | null
+  createdAt?: string
+  updatedAt?: string
 }
 
 const STORAGE_KEY = 'ppv-lifeos-data-v1'
@@ -47,7 +51,6 @@ const layers: Array<{
   short: string
   description: string
   parent: LayerId | null
-  child: LayerId | null
 }> = [
   {
     id: 'principle',
@@ -55,7 +58,6 @@ const layers: Array<{
     short: '原',
     description: '最高判斷標準，代表相信什麼、什麼不可違背。',
     parent: null,
-    child: 'pillar',
   },
   {
     id: 'pillar',
@@ -63,7 +65,6 @@ const layers: Array<{
     short: '支',
     description: '人生長期承重領域，維持整體平衡。',
     parent: 'principle',
-    child: 'purpose',
   },
   {
     id: 'purpose',
@@ -71,7 +72,6 @@ const layers: Array<{
     short: '目',
     description: '說明支柱為什麼重要，避免目標變成外界標準。',
     parent: 'pillar',
-    child: 'goal',
   },
   {
     id: 'goal',
@@ -79,7 +79,6 @@ const layers: Array<{
     short: '標',
     description: '在某個目的下想前進的方向。',
     parent: 'purpose',
-    child: 'outcome',
   },
   {
     id: 'outcome',
@@ -87,7 +86,6 @@ const layers: Array<{
     short: '果',
     description: '用可觀察成果校準目標是否有實際進展。',
     parent: 'goal',
-    child: 'project',
   },
   {
     id: 'project',
@@ -95,7 +93,6 @@ const layers: Array<{
     short: '專',
     description: '為了創造結果而需要完成的一組具體工作。',
     parent: 'outcome',
-    child: 'action',
   },
   {
     id: 'action',
@@ -103,7 +100,6 @@ const layers: Array<{
     short: '行',
     description: '今天或本週可以直接執行的下一步。',
     parent: 'project',
-    child: null,
   },
 ]
 
@@ -113,62 +109,36 @@ const statusLabels: Record<Status, string> = {
   done: '完成',
 }
 
-const starterItems: LifeItem[] = [
-  makeItem('principle', '長期主義', '真正重要的事，必須經得起時間檢驗。', null, 'active'),
-  makeItem('pillar', '健康', '身體是所有承諾與責任的底層資產。', 'seed-principle-1', 'active'),
-  makeItem('purpose', '保持長期體能', '讓我有能力陪伴家人、承擔工作，並維持清醒的生活節奏。', 'seed-pillar-1', 'active'),
-  makeItem('goal', '建立穩定運動習慣', '先追求可持續，不追求一次性的爆發。', 'seed-purpose-1', 'active'),
-  makeItem('outcome', '每週運動四次', '用週頻率觀察這個目標是否真正進入生活。', 'seed-goal-1', 'active'),
-  makeItem('project', '六月運動計畫', '安排跑步、肌力與恢復，讓行動變得具體。', 'seed-outcome-1', 'active'),
-  makeItem('action', '今天慢跑 20 分鐘', '低門檻完成，讓系統先開始運轉。', 'seed-project-1', 'not-started'),
-].map((item, index) => ({ ...item, id: `seed-${layers[index].id}-1` }))
-
-function makeItem(
-  layer: LayerId,
-  title: string,
-  note: string,
-  parentId: string | null,
-  status: Status,
-): LifeItem {
-  const now = new Date().toISOString()
-  return {
-    id: crypto.randomUUID(),
-    layer,
-    title,
-    note,
-    parentId,
-    status,
-    createdAt: now,
-    updatedAt: now,
-  }
-}
+const dateFieldLabels: Array<{ key: keyof Pick<
+  Draft,
+  'createdDate' | 'startDate' | 'completedDate' | 'scheduledDate' | 'dueDate'
+>; label: string }> = [
+  { key: 'createdDate', label: '建立日期' },
+  { key: 'startDate', label: '開始日期' },
+  { key: 'scheduledDate', label: '預計日期' },
+  { key: 'dueDate', label: '截止日期' },
+  { key: 'completedDate', label: '完成日期' },
+]
 
 function App() {
   const [items, setItems] = useState<LifeItem[]>(() => loadItems())
   const [activeTab, setActiveTab] = useState<TabId>('home')
   const [activeLayer, setActiveLayer] = useState<LayerId>('principle')
-  const [selectedId, setSelectedId] = useState<string>(items[0]?.id ?? '')
   const [draft, setDraft] = useState<Draft>(() => emptyDraft('principle'))
   const [editingId, setEditingId] = useState<string | null>(null)
   const [notice, setNotice] = useState('資料只保存在這台裝置的瀏覽器中。')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 1, items }))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, items }))
   }, [items])
 
-  const selectedItem = items.find((item) => item.id === selectedId) ?? items[0] ?? null
   const activeLayerMeta = getLayer(activeLayer)
   const activeLayerItems = items.filter((item) => item.layer === activeLayer)
   const actionItems = items.filter((item) => item.layer === 'action')
   const pendingActions = actionItems.filter((item) => item.status !== 'done')
   const activeProjects = items.filter((item) => item.layer === 'project' && item.status !== 'done')
-  const lonelyItems = items.filter((item) => getLayer(item.layer).parent && !item.parentId)
-
-  const selectedPath = useMemo(
-    () => (selectedItem ? buildPath(selectedItem, items) : []),
-    [selectedItem, items],
-  )
+  const unlinkedItems = items.filter((item) => getLayer(item.layer).parent && item.parentIds.length === 0)
 
   function saveDraft(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -178,10 +148,8 @@ function App() {
     }
 
     const layerMeta = getLayer(draft.layer)
-    if (layerMeta.parent && !draft.parentId) {
-      setNotice(`請選擇所屬${getLayer(layerMeta.parent).label}。`)
-      return
-    }
+    const parentIds = layerMeta.parent ? draft.parentIds : []
+    const today = currentDate()
 
     if (editingId) {
       setItems((current) =>
@@ -189,31 +157,35 @@ function App() {
           item.id === editingId
             ? {
                 ...item,
+                ...draft,
                 title: draft.title.trim(),
                 note: draft.note.trim(),
-                parentId: layerMeta.parent ? draft.parentId : null,
-                status: draft.status,
-                updatedAt: new Date().toISOString(),
+                parentIds,
+                completedDate:
+                  draft.status === 'done' && !draft.completedDate ? today : draft.completedDate,
+                updatedDate: today,
               }
             : item,
         ),
       )
       setNotice('已更新物件。')
-      setEditingId(null)
     } else {
-      const nextItem = makeItem(
-        draft.layer,
-        draft.title.trim(),
-        draft.note.trim(),
-        layerMeta.parent ? draft.parentId : null,
-        draft.status,
-      )
+      const nextItem: LifeItem = {
+        id: crypto.randomUUID(),
+        ...draft,
+        title: draft.title.trim(),
+        note: draft.note.trim(),
+        parentIds,
+        completedDate: draft.status === 'done' && !draft.completedDate ? today : draft.completedDate,
+        createdDate: draft.createdDate || today,
+        updatedDate: today,
+      }
       setItems((current) => [nextItem, ...current])
-      setSelectedId(nextItem.id)
       setActiveLayer(nextItem.layer)
       setNotice(`已建立${layerMeta.label}。`)
     }
 
+    setEditingId(null)
     setDraft(emptyDraft(draft.layer))
   }
 
@@ -223,30 +195,54 @@ function App() {
       layer: item.layer,
       title: item.title,
       note: item.note,
-      parentId: item.parentId ?? '',
+      parentIds: item.parentIds,
       status: item.status,
+      createdDate: item.createdDate,
+      updatedDate: item.updatedDate,
+      startDate: item.startDate,
+      completedDate: item.completedDate,
+      scheduledDate: item.scheduledDate,
+      dueDate: item.dueDate,
     })
     setActiveLayer(item.layer)
     setActiveTab('map')
+    setNotice(`正在編輯：${item.title}`)
   }
 
-  function deleteItem(item: LifeItem) {
-    const hasChildren = items.some((candidate) => candidate.parentId === item.id)
+  function deleteEditingItem() {
+    if (!editingId) return
+
+    const item = items.find((candidate) => candidate.id === editingId)
+    if (!item) return
+
+    const hasChildren = items.some((candidate) => candidate.parentIds.includes(editingId))
     if (hasChildren) {
-      setNotice('這個物件仍有下層連結，請先移動或刪除子項目。')
+      setNotice('這個物件仍被其他物件連結，請先移除那些連結。')
       return
     }
 
-    setItems((current) => current.filter((candidate) => candidate.id !== item.id))
-    setSelectedId(items.find((candidate) => candidate.id !== item.id)?.id ?? '')
+    setItems((current) => current.filter((candidate) => candidate.id !== editingId))
+    setEditingId(null)
+    setDraft(emptyDraft(item.layer))
     setNotice(`已刪除${getLayer(item.layer).label}。`)
   }
 
   function updateStatus(item: LifeItem, status: Status) {
+    const today = currentDate()
     setItems((current) =>
       current.map((candidate) =>
         candidate.id === item.id
-          ? { ...candidate, status, updatedAt: new Date().toISOString() }
+          ? {
+              ...candidate,
+              status,
+              completedDate:
+                status === 'done'
+                  ? candidate.completedDate || today
+                  : item.status === 'done'
+                    ? ''
+                    : candidate.completedDate,
+              updatedDate: today,
+            }
           : candidate,
       ),
     )
@@ -254,7 +250,7 @@ function App() {
 
   function exportJson() {
     const payload: LifeData = {
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
       items,
     }
@@ -262,7 +258,7 @@ function App() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `ppv-lifeos-${new Date().toISOString().slice(0, 10)}.json`
+    link.download = `ppv-lifeos-${currentDate()}.json`
     link.click()
     URL.revokeObjectURL(url)
     setNotice('已匯出 JSON，可存到 iPhone「檔案」。')
@@ -275,10 +271,11 @@ function App() {
     const reader = new FileReader()
     reader.onload = () => {
       try {
-        const parsed = JSON.parse(String(reader.result)) as LifeData
+        const parsed = JSON.parse(String(reader.result)) as { items?: unknown[] }
         if (!Array.isArray(parsed.items)) throw new Error('Invalid file')
-        setItems(parsed.items.filter(isLifeItem))
-        setSelectedId(parsed.items[0]?.id ?? '')
+        setItems(parsed.items.map(normalizeItem).filter(Boolean) as LifeItem[])
+        setEditingId(null)
+        setDraft(emptyDraft(activeLayer))
         setNotice('已匯入 JSON。')
       } catch {
         setNotice('匯入失敗，請確認檔案是 PPV Life OS JSON。')
@@ -287,12 +284,6 @@ function App() {
       }
     }
     reader.readAsText(file)
-  }
-
-  function resetStarterData() {
-    setItems(starterItems)
-    setSelectedId(starterItems[0]?.id ?? '')
-    setNotice('已載入範例資料。')
   }
 
   return (
@@ -314,13 +305,12 @@ function App() {
               <div>
                 <p className="eyebrow">今日焦點</p>
                 <h2>{pendingActions[0]?.title ?? '先建立你的第一個行動'}</h2>
-                <p>{pendingActions[0]?.note || '每個行動都會一路連回你的原則。'}</p>
+                <p>{pendingActions[0]?.note || '行動可以依需要連結到一個或多個上層專案。'}</p>
               </div>
               <button
                 type="button"
                 onClick={() => {
                   setActiveTab('actions')
-                  if (pendingActions[0]) setSelectedId(pendingActions[0].id)
                 }}
               >
                 查看行動
@@ -330,7 +320,7 @@ function App() {
             <div className="metric-grid">
               <Metric label="待執行行動" value={pendingActions.length} />
               <Metric label="進行中專案" value={activeProjects.length} />
-              <Metric label="總物件" value={items.length} />
+              <Metric label="未連結物件" value={unlinkedItems.length} />
             </div>
 
             <section className="section-block">
@@ -348,6 +338,8 @@ function App() {
                     key={layer.id}
                     onClick={() => {
                       setActiveLayer(layer.id)
+                      setDraft(emptyDraft(layer.id))
+                      setEditingId(null)
                       setActiveTab('map')
                     }}
                   >
@@ -357,13 +349,6 @@ function App() {
                   </button>
                 ))}
               </div>
-            </section>
-
-            <section className="section-block">
-              <div className="section-heading">
-                <h2>目前對齊路徑</h2>
-              </div>
-              <PathView path={selectedPath} />
             </section>
           </section>
         )}
@@ -385,7 +370,11 @@ function App() {
                     className={layer.id === activeLayer ? 'active' : ''}
                     type="button"
                     key={layer.id}
-                    onClick={() => setActiveLayer(layer.id)}
+                    onClick={() => {
+                      setActiveLayer(layer.id)
+                      setDraft(emptyDraft(layer.id))
+                      setEditingId(null)
+                    }}
                   >
                     {layer.short}
                   </button>
@@ -394,14 +383,14 @@ function App() {
               <div className="item-list">
                 {activeLayerItems.map((item) => (
                   <button
-                    className={item.id === selectedItem?.id ? 'item-card selected' : 'item-card'}
+                    className={item.id === editingId ? 'item-card selected' : 'item-card'}
                     type="button"
                     key={item.id}
-                    onClick={() => setSelectedId(item.id)}
+                    onClick={() => startEdit(item)}
                   >
                     <strong>{item.title}</strong>
                     <span>{statusLabels[item.status]}</span>
-                    <small>{childCount(item, items)} 個下層連結</small>
+                    <small>{connectionSummary(item, items)}</small>
                   </button>
                 ))}
                 {activeLayerItems.length === 0 && <EmptyState label={`尚未建立${activeLayerMeta.label}`} />}
@@ -422,23 +411,13 @@ function App() {
                 onCancel={() => {
                   setEditingId(null)
                   setDraft(emptyDraft(draft.layer))
+                  setNotice('已取消編輯。')
                 }}
+                onDelete={deleteEditingItem}
                 onDraftChange={setDraft}
                 onSubmit={saveDraft}
               />
             </div>
-
-            {selectedItem && (
-              <div className="section-block wide-detail">
-                <DetailCard
-                  item={selectedItem}
-                  items={items}
-                  onDelete={deleteItem}
-                  onEdit={startEdit}
-                  onStatus={updateStatus}
-                />
-              </div>
-            )}
           </section>
         )}
 
@@ -453,6 +432,7 @@ function App() {
                 type="button"
                 onClick={() => {
                   setDraft(emptyDraft('action'))
+                  setEditingId(null)
                   setActiveTab('map')
                   setActiveLayer('action')
                 }}
@@ -473,18 +453,11 @@ function App() {
                   </button>
                   <div>
                     <h3>{item.title}</h3>
-                    <p>{item.note || buildPath(item, items).map((pathItem) => pathItem.title).join(' / ')}</p>
+                    <p>{item.note || connectionSummary(item, items)}</p>
+                    <small>{dateSummary(item)}</small>
                   </div>
-                  <button
-                    className="ghost-button"
-                    type="button"
-                    onClick={() => {
-                      setSelectedId(item.id)
-                      setActiveTab('map')
-                      setActiveLayer('action')
-                    }}
-                  >
-                    詳情
+                  <button className="ghost-button" type="button" onClick={() => startEdit(item)}>
+                    編輯
                   </button>
                 </article>
               ))}
@@ -512,9 +485,6 @@ function App() {
                 <button type="button" onClick={() => fileInputRef.current?.click()}>
                   匯入 JSON
                 </button>
-                <button className="ghost-button" type="button" onClick={resetStarterData}>
-                  載入範例
-                </button>
               </div>
               <input
                 ref={fileInputRef}
@@ -527,13 +497,11 @@ function App() {
 
             <div className="section-block">
               <div className="section-heading">
-                <h2>資料健康</h2>
-                <span className={lonelyItems.length ? 'warning-pill' : 'count-pill'}>
-                  {lonelyItems.length ? `${lonelyItems.length} 個未連結` : '完整'}
-                </span>
+                <h2>資料狀態</h2>
+                <span className="count-pill">{items.length} 個物件</span>
               </div>
               <p className="muted">
-                第一版採單一父層連結，確保每個下層物件都能回到明確的上層方向。
+                目前允許多個父層，也允許不連結父層；未連結不再視為錯誤，而是保留彈性。
               </p>
             </div>
           </section>
@@ -557,6 +525,7 @@ function ItemForm({
   editingId,
   items,
   onCancel,
+  onDelete,
   onDraftChange,
   onSubmit,
 }: {
@@ -564,11 +533,19 @@ function ItemForm({
   editingId: string | null
   items: LifeItem[]
   onCancel: () => void
+  onDelete: () => void
   onDraftChange: (draft: Draft) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
 }) {
   const layerMeta = getLayer(draft.layer)
   const parentOptions = layerMeta.parent ? items.filter((item) => item.layer === layerMeta.parent) : []
+
+  function toggleParent(parentId: string) {
+    const parentIds = draft.parentIds.includes(parentId)
+      ? draft.parentIds.filter((id) => id !== parentId)
+      : [...draft.parentIds, parentId]
+    onDraftChange({ ...draft, parentIds })
+  }
 
   return (
     <form className="item-form" onSubmit={onSubmit}>
@@ -586,22 +563,38 @@ function ItemForm({
           ))}
         </select>
       </label>
+
       {layerMeta.parent && (
-        <label>
-          所屬{getLayer(layerMeta.parent).label}
-          <select
-            value={draft.parentId}
-            onChange={(event) => onDraftChange({ ...draft, parentId: event.target.value })}
-          >
-            <option value="">請選擇</option>
-            {parentOptions.map((item) => (
-              <option value={item.id} key={item.id}>
-                {item.title}
-              </option>
-            ))}
-          </select>
-        </label>
+        <fieldset className="parent-picker">
+          <legend>連結{getLayer(layerMeta.parent).label}</legend>
+          {parentOptions.length > 0 ? (
+            <>
+              <div className="parent-options">
+                {parentOptions.map((item) => (
+                  <label className="check-option" key={item.id}>
+                    <input
+                      type="checkbox"
+                      checked={draft.parentIds.includes(item.id)}
+                      onChange={() => toggleParent(item.id)}
+                    />
+                    <span>{item.title}</span>
+                  </label>
+                ))}
+              </div>
+              <button
+                className="ghost-button"
+                type="button"
+                onClick={() => onDraftChange({ ...draft, parentIds: [] })}
+              >
+                清空連結
+              </button>
+            </>
+          ) : (
+            <p className="muted">目前沒有可連結的上層物件，也可以先保持未連結。</p>
+          )}
+        </fieldset>
       )}
+
       <label>
         名稱
         <input
@@ -629,76 +622,38 @@ function ItemForm({
           <option value="done">完成</option>
         </select>
       </label>
+
+      <div className="date-grid">
+        {dateFieldLabels.map((field) => (
+          <label key={field.key}>
+            {field.label}
+            <input
+              type="date"
+              value={draft[field.key]}
+              onChange={(event) => onDraftChange({ ...draft, [field.key]: event.target.value })}
+            />
+          </label>
+        ))}
+        <label>
+          修改日期
+          <input type="date" value={draft.updatedDate} disabled />
+        </label>
+      </div>
+
       <div className="form-actions">
         <button type="submit">{editingId ? '儲存變更' : `建立${layerMeta.label}`}</button>
         {editingId && (
-          <button className="ghost-button" type="button" onClick={onCancel}>
-            取消
-          </button>
+          <>
+            <button className="ghost-button" type="button" onClick={onCancel}>
+              取消
+            </button>
+            <button className="danger-button" type="button" onClick={onDelete}>
+              刪除
+            </button>
+          </>
         )}
       </div>
     </form>
-  )
-}
-
-function DetailCard({
-  item,
-  items,
-  onDelete,
-  onEdit,
-  onStatus,
-}: {
-  item: LifeItem
-  items: LifeItem[]
-  onDelete: (item: LifeItem) => void
-  onEdit: (item: LifeItem) => void
-  onStatus: (item: LifeItem, status: Status) => void
-}) {
-  const layerMeta = getLayer(item.layer)
-  const parent = item.parentId ? items.find((candidate) => candidate.id === item.parentId) : null
-  const children = items.filter((candidate) => candidate.parentId === item.id)
-  const path = buildPath(item, items)
-
-  return (
-    <article className="detail-card">
-      <div className="detail-head">
-        <span>{layerMeta.label}</span>
-        <strong>{statusLabels[item.status]}</strong>
-      </div>
-      <h2>{item.title}</h2>
-      <p>{item.note || '尚未加入說明。'}</p>
-      <div className="detail-meta">
-        <span>上層：{parent?.title ?? '無'}</span>
-        <span>下層：{children.length}</span>
-      </div>
-      <PathView path={path} />
-      <div className="detail-actions">
-        <button type="button" onClick={() => onEdit(item)}>
-          編輯
-        </button>
-        <button type="button" onClick={() => onStatus(item, item.status === 'done' ? 'active' : 'done')}>
-          {item.status === 'done' ? '標記進行中' : '標記完成'}
-        </button>
-        <button className="danger-button" type="button" onClick={() => onDelete(item)}>
-          刪除
-        </button>
-      </div>
-    </article>
-  )
-}
-
-function PathView({ path }: { path: LifeItem[] }) {
-  if (path.length === 0) return <EmptyState label="尚未選擇物件" />
-
-  return (
-    <div className="path-view">
-      {path.map((item) => (
-        <div className="path-node" key={item.id}>
-          <span>{getLayer(item.layer).short}</span>
-          <strong>{item.title}</strong>
-        </div>
-      ))}
-    </div>
   )
 }
 
@@ -726,23 +681,48 @@ function EmptyState({ label }: { label: string }) {
 function loadItems(): LifeItem[] {
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
-    if (!stored) return starterItems
-    const parsed = JSON.parse(stored) as LifeData
-    if (!Array.isArray(parsed.items)) return starterItems
-    return parsed.items.filter(isLifeItem)
+    if (!stored) return []
+    const parsed = JSON.parse(stored) as { items?: unknown[] }
+    if (!Array.isArray(parsed.items)) return []
+    return parsed.items.map(normalizeItem).filter(Boolean) as LifeItem[]
   } catch {
-    return starterItems
+    return []
   }
 }
 
-function isLifeItem(item: unknown): item is LifeItem {
-  if (!item || typeof item !== 'object') return false
-  const candidate = item as LifeItem
-  return (
-    typeof candidate.id === 'string' &&
-    layers.some((layer) => layer.id === candidate.layer) &&
-    typeof candidate.title === 'string'
-  )
+function normalizeItem(item: unknown): LifeItem | null {
+  if (!item || typeof item !== 'object') return null
+  const candidate = item as LegacyItem
+  if (typeof candidate.id !== 'string' || !isLayer(candidate.layer) || typeof candidate.title !== 'string') {
+    return null
+  }
+
+  return {
+    id: candidate.id,
+    layer: candidate.layer,
+    title: candidate.title,
+    note: typeof candidate.note === 'string' ? candidate.note : '',
+    parentIds: Array.isArray(candidate.parentIds)
+      ? candidate.parentIds.filter((id): id is string => typeof id === 'string')
+      : candidate.parentId
+        ? [candidate.parentId]
+        : [],
+    status: isStatus(candidate.status) ? candidate.status : 'active',
+    createdDate: normalizeDate(candidate.createdDate || candidate.createdAt),
+    updatedDate: normalizeDate(candidate.updatedDate || candidate.updatedAt),
+    startDate: normalizeDate(candidate.startDate),
+    completedDate: normalizeDate(candidate.completedDate),
+    scheduledDate: normalizeDate(candidate.scheduledDate),
+    dueDate: normalizeDate(candidate.dueDate),
+  }
+}
+
+function isStatus(status: unknown): status is Status {
+  return status === 'not-started' || status === 'active' || status === 'done'
+}
+
+function isLayer(layerId: unknown): layerId is LayerId {
+  return layers.some((layer) => layer.id === layerId)
 }
 
 function getLayer(layerId: LayerId) {
@@ -750,31 +730,44 @@ function getLayer(layerId: LayerId) {
 }
 
 function emptyDraft(layer: LayerId): Draft {
+  const today = currentDate()
   return {
     layer,
     title: '',
     note: '',
-    parentId: '',
+    parentIds: [],
     status: layer === 'action' ? 'not-started' : 'active',
+    createdDate: today,
+    updatedDate: today,
+    startDate: '',
+    completedDate: '',
+    scheduledDate: '',
+    dueDate: '',
   }
 }
 
-function childCount(item: LifeItem, items: LifeItem[]) {
-  return items.filter((candidate) => candidate.parentId === item.id).length
+function connectionSummary(item: LifeItem, items: LifeItem[]) {
+  const parentCount = item.parentIds.length
+  const childCount = items.filter((candidate) => candidate.parentIds.includes(item.id)).length
+  return `${parentCount} 個上層連結 / ${childCount} 個下層連結`
 }
 
-function buildPath(item: LifeItem, items: LifeItem[]) {
-  const path: LifeItem[] = [item]
-  let cursor = item
+function dateSummary(item: LifeItem) {
+  const parts = [
+    item.scheduledDate ? `預計 ${item.scheduledDate}` : '',
+    item.dueDate ? `截止 ${item.dueDate}` : '',
+    item.completedDate ? `完成 ${item.completedDate}` : '',
+  ].filter(Boolean)
+  return parts.join(' · ')
+}
 
-  while (cursor.parentId) {
-    const parent = items.find((candidate) => candidate.id === cursor.parentId)
-    if (!parent) break
-    path.unshift(parent)
-    cursor = parent
-  }
+function currentDate() {
+  return new Date().toISOString().slice(0, 10)
+}
 
-  return path
+function normalizeDate(value: unknown) {
+  if (typeof value !== 'string' || !value) return ''
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : value.slice(0, 10)
 }
 
 function exampleTitle(layer: LayerId) {

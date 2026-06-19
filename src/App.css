@@ -31,15 +31,10 @@
   grid-template-columns: minmax(0, 1fr) minmax(320px, 0.9fr);
 }
 
-.wide-detail {
-  grid-column: 1 / -1;
-}
-
 .hero-panel,
 .section-block,
 .metric-card,
-.action-row,
-.detail-card {
+.action-row {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
@@ -75,9 +70,6 @@
 }
 
 .section-heading,
-.detail-head,
-.detail-meta,
-.detail-actions,
 .data-actions,
 .form-actions {
   display: flex;
@@ -90,8 +82,7 @@
   margin-bottom: 12px;
 }
 
-.section-heading h2,
-.detail-card h2 {
+.section-heading h2 {
   margin: 0;
 }
 
@@ -145,8 +136,7 @@
   padding: 10px 6px;
 }
 
-.layer-tile span,
-.path-node span {
+.layer-tile span {
   display: grid;
   width: 30px;
   height: 30px;
@@ -185,8 +175,7 @@
 }
 
 .item-list,
-.action-list,
-.path-view {
+.action-list {
   display: grid;
   gap: 10px;
 }
@@ -213,6 +202,55 @@
 .item-form {
   display: grid;
   gap: 12px;
+}
+
+.parent-picker {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--field);
+}
+
+.parent-picker legend {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  padding: 0 4px;
+}
+
+.parent-options {
+  display: grid;
+  gap: 8px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.check-option {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 8px 10px;
+}
+
+.check-option input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
+.date-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
 label {
@@ -242,14 +280,6 @@ textarea {
   resize: vertical;
 }
 
-.detail-card {
-  display: grid;
-  gap: 12px;
-  padding: 18px;
-}
-
-.detail-head span,
-.detail-head strong,
 .count-pill,
 .warning-pill {
   border-radius: 999px;
@@ -258,41 +288,14 @@ textarea {
   font-weight: 800;
 }
 
-.detail-head span,
 .count-pill {
   background: var(--accent-soft);
   color: var(--accent);
 }
 
-.detail-head strong {
-  background: var(--wash);
-  color: var(--muted);
-}
-
 .warning-pill {
   background: #fff4d8;
   color: #8a5a00;
-}
-
-.detail-meta {
-  justify-content: flex-start;
-  flex-wrap: wrap;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.path-view {
-  position: relative;
-}
-
-.path-node {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 11px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--field);
 }
 
 .action-row {
@@ -312,6 +315,13 @@ textarea {
 .action-row p {
   color: var(--muted);
   font-size: 13px;
+}
+
+.action-row small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 4px;
 }
 
 .check {
@@ -446,7 +456,8 @@ textarea:focus-visible {
   }
 
   .two-column,
-  .metric-grid {
+  .metric-grid,
+  .date-grid {
     grid-template-columns: 1fr;
   }
 
@@ -470,14 +481,12 @@ textarea:focus-visible {
   }
 
   .section-heading,
-  .detail-actions,
   .form-actions {
     align-items: stretch;
     flex-direction: column;
   }
 
   .section-heading button,
-  .detail-actions button,
   .form-actions button {
     width: 100%;
   }
