@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ChangeEvent, FormEvent } from 'react'
+import type { CSSProperties, ChangeEvent, FormEvent } from 'react'
 import './App.css'
 
 type LayerId =
@@ -12,7 +12,7 @@ type LayerId =
   | 'action'
 
 type Status = 'not-started' | 'active' | 'done'
-type TabId = 'home' | 'map' | 'actions' | 'data'
+type TabId = 'home' | 'map' | 'actions' | 'calendar' | 'data'
 type PanelMode = 'relationship' | 'edit' | 'create'
 type StatusFilter = 'all' | Status
 type DateFilter = 'all' | 'overdue' | 'today' | 'this-week' | 'unscheduled' | 'done'
@@ -26,6 +26,7 @@ type SortField =
   | 'updatedDate'
   | 'title'
 type SortDirection = 'asc' | 'desc'
+type CalendarLayer = Extract<LayerId, 'outcome' | 'project' | 'action'>
 
 type LifeItem = {
   id: string
@@ -43,6 +44,37 @@ type LifeItem = {
 }
 
 type Draft = Omit<LifeItem, 'id'>
+
+type CalendarRangeEntry = {
+  item: LifeItem
+  layer: CalendarLayer
+  startDate: string
+  endDate: string
+}
+
+type CalendarWeek = {
+  id: string
+  days: MonthDay[]
+  startDate: string
+  endDate: string
+}
+
+type CalendarBarSegment = {
+  entry: CalendarRangeEntry
+  weekIndex: number
+  startColumn: number
+  endColumn: number
+  lane: number
+  continuesBefore: boolean
+  continuesAfter: boolean
+}
+
+type MonthDay = {
+  date: string
+  dayNumber: number
+  inCurrentMonth: boolean
+  isToday: boolean
+}
 
 type LifeData = {
   version: 2
@@ -138,6 +170,9 @@ const layers: Array<{
   },
 ]
 
+const calendarLayerIds: CalendarLayer[] = ['action', 'project', 'outcome']
+const weekdayLabels = ['一', '二', '三', '四', '五', '六', '日']
+
 const statusLabels: Record<Status, string> = {
   'not-started': '未開始',
   active: '進行中',
@@ -164,6 +199,12 @@ const defaultMapPreference: MapPreference = {
   controlsCollapsed: true,
 }
 
+const defaultCalendarLayerFilters: Record<CalendarLayer, boolean> = {
+  action: true,
+  project: true,
+  outcome: true,
+}
+
 const dateFieldLabels: Array<{ key: keyof Pick<
   Draft,
   'createdDate' | 'startDate' | 'completedDate' | 'scheduledDate' | 'dueDate'
@@ -186,6 +227,10 @@ function App() {
   const [panelMode, setPanelMode] = useState<PanelMode>('create')
   const [draft, setDraft] = useState<Draft>(() => emptyDraft('principle'))
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [calendarMonth, setCalendarMonth] = useState(() => getMonthKey(currentDate()))
+  const [calendarLayerFilters, setCalendarLayerFilters] = useState<Record<CalendarLayer, boolean>>(
+    () => ({ ...defaultCalendarLayerFilters }),
+  )
   const [notice, setNotice] = useState('資料只保存在這台裝置的瀏覽器中。')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -208,6 +253,7 @@ function App() {
   const featuredOutcomes = getFeaturedOutcomes(activeOutcomes)
   const unlinkedItems = items.filter((item) => getLayer(item.layer).parent && item.parentIds.length === 0)
   const selectedItem = items.find((item) => item.id === selectedItemId) ?? null
+  const calendarEntries = getCalendarRangeEntries(items, calendarLayerFilters, calendarMonth)
 
   function updateActiveMapPreference(patch: Partial<MapPreference>) {
     setMapPreferencesByLayer((current) => ({
@@ -323,14 +369,34 @@ function App() {
     setNotice(`正在編輯：${item.title}`)
   }
 
-  function openOutcomeRelationship(item: LifeItem) {
+  function openItemRelationship(item: LifeItem) {
     setSelectedItemId(item.id)
     setEditingId(null)
-    setDraft(emptyDraft('outcome'))
-    setActiveLayer('outcome')
+    setDraft(emptyDraft(item.layer))
+    setActiveLayer(item.layer)
     setActiveTab('map')
     setPanelMode('relationship')
-    setNotice(`正在查看結果：${item.title}`)
+    setNotice(`正在查看${getLayer(item.layer).label}：${item.title}`)
+  }
+
+  function showPreviousCalendarMonth() {
+    setCalendarMonth((current) => shiftMonth(current, -1))
+  }
+
+  function showNextCalendarMonth() {
+    setCalendarMonth((current) => shiftMonth(current, 1))
+  }
+
+  function showCurrentCalendarMonth() {
+    const today = currentDate()
+    setCalendarMonth(getMonthKey(today))
+  }
+
+  function toggleCalendarLayer(layer: CalendarLayer) {
+    setCalendarLayerFilters((current) => ({
+      ...current,
+      [layer]: !current[layer],
+    }))
   }
 
   function deleteEditingItem() {
@@ -454,7 +520,7 @@ function App() {
               outcomes={featuredOutcomes}
               totalCount={activeOutcomes.length}
               onCreate={() => startCreate('outcome')}
-              onOpen={openOutcomeRelationship}
+              onOpen={openItemRelationship}
             />
           </section>
         )}
@@ -597,6 +663,19 @@ function App() {
           </section>
         )}
 
+        {activeTab === 'calendar' && (
+          <CalendarView
+            entries={calendarEntries}
+            layerFilters={calendarLayerFilters}
+            month={calendarMonth}
+            onLayerToggle={toggleCalendarLayer}
+            onNextMonth={showNextCalendarMonth}
+            onOpenItem={openItemRelationship}
+            onPreviousMonth={showPreviousCalendarMonth}
+            onToday={showCurrentCalendarMonth}
+          />
+        )}
+
         {activeTab === 'data' && (
           <section className="screen">
             <div className="section-block">
@@ -645,6 +724,7 @@ function App() {
         <NavButton label="首頁" active={activeTab === 'home'} onClick={() => setActiveTab('home')} />
         <NavButton label="架構" active={activeTab === 'map'} onClick={() => setActiveTab('map')} />
         <NavButton label="行動" active={activeTab === 'actions'} onClick={() => setActiveTab('actions')} />
+        <NavButton label="月曆" active={activeTab === 'calendar'} onClick={() => setActiveTab('calendar')} />
         <NavButton label="資料" active={activeTab === 'data'} onClick={() => setActiveTab('data')} />
       </nav>
     </div>
@@ -840,6 +920,152 @@ function OutcomeFocusList({
           </button>
         </div>
       )}
+    </section>
+  )
+}
+
+function CalendarView({
+  entries,
+  layerFilters,
+  month,
+  onLayerToggle,
+  onNextMonth,
+  onOpenItem,
+  onPreviousMonth,
+  onToday,
+}: {
+  entries: CalendarRangeEntry[]
+  layerFilters: Record<CalendarLayer, boolean>
+  month: string
+  onLayerToggle: (layer: CalendarLayer) => void
+  onNextMonth: () => void
+  onOpenItem: (item: LifeItem) => void
+  onPreviousMonth: () => void
+  onToday: () => void
+}) {
+  const weeks = getCalendarWeeks(month)
+  const segments = buildCalendarWeekSegments(entries, weeks)
+  const segmentsByWeek = weeks.map((_, weekIndex) =>
+    segments.filter((segment) => segment.weekIndex === weekIndex),
+  )
+  const hasActiveLayer = calendarLayerIds.some((layer) => layerFilters[layer])
+
+  return (
+    <section className="screen">
+      <div className="section-block calendar-shell">
+        <div className="calendar-toolbar">
+          <button className="calendar-icon-button" type="button" onClick={onPreviousMonth} aria-label="上一個月">
+            ‹
+          </button>
+          <div className="calendar-title">
+            <p className="eyebrow">月行事曆</p>
+            <h2>{formatMonthLabel(month)}</h2>
+          </div>
+          <button className="ghost-button" type="button" onClick={onToday}>
+            今天
+          </button>
+          <button className="calendar-icon-button" type="button" onClick={onNextMonth} aria-label="下一個月">
+            ›
+          </button>
+        </div>
+
+        <div className="calendar-layer-filters" aria-label="月曆顯示層級">
+          {calendarLayerIds.map((layer) => (
+            <button
+              className={layerFilters[layer] ? 'calendar-filter active' : 'calendar-filter'}
+              type="button"
+              key={layer}
+              onClick={() => onLayerToggle(layer)}
+              aria-pressed={layerFilters[layer]}
+            >
+              <span className={`layer-dot layer-${layer}`} />
+              {getLayer(layer).label}
+            </button>
+          ))}
+        </div>
+
+        <div className="calendar-weekdays" aria-hidden="true">
+          {weekdayLabels.map((weekday) => (
+            <span key={weekday}>{weekday}</span>
+          ))}
+        </div>
+
+        <div className="calendar-range-grid">
+          {weeks.map((week, weekIndex) => {
+            const weekSegments = segmentsByWeek[weekIndex]
+            const laneCount = weekSegments.reduce(
+              (maximum, segment) => Math.max(maximum, segment.lane + 1),
+              0,
+            )
+            const weekStyle = {
+              '--calendar-week-height': `${66 + Math.max(laneCount, 1) * 28}px`,
+            } as CSSProperties
+
+            return (
+              <div className="calendar-week-row" key={week.id} style={weekStyle}>
+                <div className="calendar-week-days" aria-hidden="true">
+                  {week.days.map((day) => (
+                    <div
+                      className={[
+                        'calendar-day-cell',
+                        day.inCurrentMonth ? '' : 'outside',
+                        day.isToday ? 'today' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                      key={day.date}
+                    >
+                      <span className="calendar-day-number">{day.dayNumber}</span>
+                    </div>
+                  ))}
+                </div>
+                <div
+                  className="calendar-week-bars"
+                  aria-label={`${week.startDate} 到 ${week.endDate} 的期間項目`}
+                >
+                  {weekSegments.map((segment) => {
+                    const { entry } = segment
+                    const barStyle = {
+                      gridColumn: `${segment.startColumn} / ${segment.endColumn + 1}`,
+                      gridRow: segment.lane + 1,
+                    } as CSSProperties
+                    const label = `${getLayer(entry.layer).label} ${entry.item.title}，${entry.startDate} 到 ${entry.endDate}，${statusLabels[entry.item.status]}`
+
+                    return (
+                      <button
+                        className={[
+                          'calendar-bar',
+                          `layer-${entry.layer}`,
+                          segment.continuesBefore ? 'continues-before' : '',
+                          segment.continuesAfter ? 'continues-after' : '',
+                        ]
+                          .filter(Boolean)
+                          .join(' ')}
+                        type="button"
+                        key={`${entry.item.id}-${weekIndex}-${segment.startColumn}-${segment.endColumn}`}
+                        style={barStyle}
+                        title={label}
+                        aria-label={label}
+                        onClick={() => onOpenItem(entry.item)}
+                      >
+                        <span className="calendar-bar-title">{entry.item.title}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {!hasActiveLayer ? (
+          <EmptyState label="請至少開啟一個層級篩選" />
+        ) : entries.length === 0 ? (
+          <EmptyState label="這個月沒有具有開始或截止日期的行動、專案或結果" />
+        ) : (
+          <p className="calendar-hint">橫條使用開始日期到截止日期；缺一個日期時顯示為單日。</p>
+        )}
+      </div>
     </section>
   )
 }
@@ -1202,6 +1428,10 @@ function isSortField(field: unknown): field is SortField {
   )
 }
 
+function isCalendarLayer(layer: unknown): layer is CalendarLayer {
+  return layer === 'action' || layer === 'project' || layer === 'outcome'
+}
+
 function isLayer(layerId: unknown): layerId is LayerId {
   return layers.some((layer) => layer.id === layerId)
 }
@@ -1270,6 +1500,175 @@ function compareOutcomeFocus(left: LifeItem, right: LifeItem) {
 
 function getOutcomePriorityDate(item: LifeItem) {
   return item.dueDate || item.scheduledDate
+}
+
+function getCalendarRangeEntries(
+  items: LifeItem[],
+  layerFilters: Record<CalendarLayer, boolean>,
+  month: string,
+) {
+  const monthStart = month
+  const monthEnd = getMonthEnd(month)
+  const entries: CalendarRangeEntry[] = []
+
+  items.forEach((item) => {
+    if (!isCalendarLayer(item.layer) || !layerFilters[item.layer]) return
+
+    const range = getCalendarRange(item)
+    if (!range || !rangesOverlap(range.startDate, range.endDate, monthStart, monthEnd)) return
+
+    entries.push({
+      item,
+      layer: item.layer,
+      startDate: range.startDate,
+      endDate: range.endDate,
+    })
+  })
+
+  return entries.sort(compareCalendarRangeEntries)
+}
+
+function getCalendarRange(item: LifeItem) {
+  if (!item.startDate && !item.dueDate) return null
+
+  const startDate = item.startDate || item.dueDate
+  const endDate = item.dueDate || item.startDate
+
+  return {
+    startDate: minDate(startDate, endDate),
+    endDate: maxDate(startDate, endDate),
+  }
+}
+
+function compareCalendarRangeEntries(left: CalendarRangeEntry, right: CalendarRangeEntry) {
+  const startCompared = left.startDate.localeCompare(right.startDate)
+  if (startCompared !== 0) return startCompared
+
+  const endCompared = left.endDate.localeCompare(right.endDate)
+  if (endCompared !== 0) return endCompared
+
+  const layerCompared = calendarLayerIds.indexOf(left.layer) - calendarLayerIds.indexOf(right.layer)
+  if (layerCompared !== 0) return layerCompared
+
+  return left.item.title.localeCompare(right.item.title, 'zh-Hant')
+}
+
+function getCalendarWeeks(month: string): CalendarWeek[] {
+  const monthDays = getMonthDays(month)
+
+  return Array.from({ length: 6 }, (_, weekIndex) => {
+    const days = monthDays.slice(weekIndex * 7, weekIndex * 7 + 7)
+
+    return {
+      id: days[0].date,
+      days,
+      startDate: days[0].date,
+      endDate: days[6].date,
+    }
+  })
+}
+
+function buildCalendarWeekSegments(entries: CalendarRangeEntry[], weeks: CalendarWeek[]) {
+  const segments: CalendarBarSegment[] = []
+
+  weeks.forEach((week, weekIndex) => {
+    const laneEnds: string[] = []
+    const weekEntries = entries
+      .filter((entry) => rangesOverlap(entry.startDate, entry.endDate, week.startDate, week.endDate))
+      .sort(compareCalendarRangeEntries)
+
+    weekEntries.forEach((entry) => {
+      const segmentStart = maxDate(entry.startDate, week.startDate)
+      const segmentEnd = minDate(entry.endDate, week.endDate)
+      const reusableLane = laneEnds.findIndex((endDate) => endDate < segmentStart)
+      const lane = reusableLane === -1 ? laneEnds.length : reusableLane
+
+      laneEnds[lane] = segmentEnd
+      segments.push({
+        entry,
+        weekIndex,
+        startColumn: daysBetween(week.startDate, segmentStart) + 1,
+        endColumn: daysBetween(week.startDate, segmentEnd) + 1,
+        lane,
+        continuesBefore: entry.startDate < segmentStart,
+        continuesAfter: entry.endDate > segmentEnd,
+      })
+    })
+  })
+
+  return segments
+}
+
+function getMonthDays(month: string): MonthDay[] {
+  const firstDay = parseLocalDate(month)
+  const mondayFirstWeekday = firstDay.getDay() || 7
+  const gridStart = new Date(firstDay)
+  gridStart.setDate(firstDay.getDate() - mondayFirstWeekday + 1)
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(gridStart)
+    date.setDate(gridStart.getDate() + index)
+    const formatted = formatLocalDate(date)
+
+    return {
+      date: formatted,
+      dayNumber: date.getDate(),
+      inCurrentMonth: getMonthKey(formatted) === month,
+      isToday: formatted === currentDate(),
+    }
+  })
+}
+
+function getMonthKey(date: string) {
+  return `${date.slice(0, 7)}-01`
+}
+
+function getMonthEnd(month: string) {
+  const nextMonth = parseLocalDate(shiftMonth(month, 1))
+  nextMonth.setDate(0)
+  return formatLocalDate(nextMonth)
+}
+
+function shiftMonth(month: string, offset: number) {
+  const date = parseLocalDate(month)
+  date.setMonth(date.getMonth() + offset)
+  date.setDate(1)
+  return formatLocalDate(date)
+}
+
+function formatMonthLabel(month: string) {
+  const [year, monthNumber] = month.split('-')
+  return `${year} 年 ${Number(monthNumber)} 月`
+}
+
+function parseLocalDate(date: string) {
+  const [year, month, day] = date.split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
+function formatLocalDate(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function minDate(left: string, right: string) {
+  return left <= right ? left : right
+}
+
+function maxDate(left: string, right: string) {
+  return left >= right ? left : right
+}
+
+function rangesOverlap(leftStart: string, leftEnd: string, rightStart: string, rightEnd: string) {
+  return leftStart <= rightEnd && leftEnd >= rightStart
+}
+
+function daysBetween(startDate: string, endDate: string) {
+  const start = parseLocalDate(startDate)
+  const end = parseLocalDate(endDate)
+  return Math.round((end.getTime() - start.getTime()) / 86_400_000)
 }
 
 function matchesDateFilter(item: LifeItem, filter: DateFilter) {
