@@ -17,6 +17,7 @@ type PanelMode = 'relationship' | 'edit' | 'create'
 type StatusFilter = 'all' | Status
 type DateFilter = 'all' | 'overdue' | 'today' | 'this-week' | 'unscheduled' | 'done'
 type LinkFilter = 'all' | 'unlinked-parent' | 'has-parent' | 'has-child' | 'no-child'
+type ParentStatusView = 'open' | 'all' | 'done'
 type SortField =
   | 'createdDate'
   | 'startDate'
@@ -1261,6 +1262,14 @@ function ItemForm({
 }) {
   const layerMeta = getLayer(draft.layer)
   const parentOptions = layerMeta.parent ? items.filter((item) => item.layer === layerMeta.parent) : []
+  const [parentSearchText, setParentSearchText] = useState('')
+  const [parentStatusView, setParentStatusView] = useState<ParentStatusView>('open')
+  const visibleParentOptions = getParentOptions(
+    parentOptions,
+    draft.parentIds,
+    parentSearchText,
+    parentStatusView,
+  )
 
   function toggleParent(parentId: string) {
     const parentIds = draft.parentIds.includes(parentId)
@@ -1291,17 +1300,58 @@ function ItemForm({
           <legend>連結{getLayer(layerMeta.parent).label}</legend>
           {parentOptions.length > 0 ? (
             <>
+              <div className="parent-picker-controls">
+                <label>
+                  搜尋上層
+                  <input
+                    value={parentSearchText}
+                    placeholder="名稱或說明"
+                    onChange={(event) => setParentSearchText(event.target.value)}
+                  />
+                </label>
+                <div className="parent-status-toggle" aria-label="篩選上層狀態">
+                  {[
+                    ['open', '未完成'],
+                    ['all', '全部'],
+                    ['done', '已完成'],
+                  ].map(([value, label]) => (
+                    <button
+                      className={parentStatusView === value ? 'active' : ''}
+                      type="button"
+                      key={value}
+                      onClick={() => setParentStatusView(value as ParentStatusView)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="parent-options">
-                {parentOptions.map((item) => (
-                  <label className="check-option" key={item.id}>
-                    <input
-                      type="checkbox"
-                      checked={draft.parentIds.includes(item.id)}
-                      onChange={() => toggleParent(item.id)}
-                    />
-                    <span>{item.title}</span>
-                  </label>
-                ))}
+                {visibleParentOptions.length > 0 ? (
+                  visibleParentOptions.map((item) => {
+                    const selected = draft.parentIds.includes(item.id)
+
+                    return (
+                      <label className={selected ? 'check-option selected' : 'check-option'} key={item.id}>
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={() => toggleParent(item.id)}
+                        />
+                        <span>
+                          <strong>{item.title}</strong>
+                          <small>
+                            {statusLabels[item.status]}
+                            {dateSummary(item) ? ` · ${dateSummary(item)}` : ''}
+                            {selected ? ' · 已選取' : ''}
+                          </small>
+                        </span>
+                      </label>
+                    )
+                  })
+                ) : (
+                  <EmptyState label="沒有符合目前條件的上層物件" />
+                )}
               </div>
               <button
                 className="ghost-button"
@@ -2086,6 +2136,45 @@ function getVisibleLayerItems(
       return matchesSearch && matchesStatus && matchesDate && matchesLink
     })
     .sort((left, right) => compareItems(left, right, preference))
+}
+
+function getParentOptions(
+  parentOptions: LifeItem[],
+  selectedParentIds: string[],
+  searchText: string,
+  statusView: ParentStatusView,
+) {
+  const selectedIds = new Set(selectedParentIds)
+  const normalizedSearch = searchText.trim().toLowerCase()
+
+  return parentOptions
+    .filter((item) => {
+      if (selectedIds.has(item.id)) return true
+
+      const matchesSearch =
+        !normalizedSearch ||
+        item.title.toLowerCase().includes(normalizedSearch) ||
+        item.note.toLowerCase().includes(normalizedSearch)
+      if (!matchesSearch) return false
+
+      if (statusView === 'open') return item.status !== 'done'
+      if (statusView === 'done') return item.status === 'done'
+      return true
+    })
+    .sort((left, right) => compareParentOptions(left, right, selectedIds))
+}
+
+function compareParentOptions(left: LifeItem, right: LifeItem, selectedIds: Set<string>) {
+  const leftSelected = selectedIds.has(left.id)
+  const rightSelected = selectedIds.has(right.id)
+  if (leftSelected !== rightSelected) return leftSelected ? -1 : 1
+
+  const leftDone = left.status === 'done'
+  const rightDone = right.status === 'done'
+  if (leftDone !== rightDone) return leftDone ? 1 : -1
+
+  const updatedCompared = right.updatedDate.localeCompare(left.updatedDate)
+  return updatedCompared === 0 ? left.title.localeCompare(right.title, 'zh-Hant') : updatedCompared
 }
 
 function getFeaturedOutcomes(outcomes: LifeItem[]) {

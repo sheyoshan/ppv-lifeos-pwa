@@ -763,6 +763,39 @@
   padding: 0 4px;
 }
 
+.parent-picker-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.parent-status-toggle {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  min-width: 190px;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--wash);
+}
+
+.parent-status-toggle button {
+  min-height: 36px;
+  padding: 0 8px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.parent-status-toggle button.active {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--ink);
+}
+
 .parent-options {
   display: grid;
   gap: 8px;
@@ -782,10 +815,32 @@
   padding: 8px 10px;
 }
 
+.check-option.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
 .check-option input {
   width: 18px;
   height: 18px;
   margin: 0;
+}
+
+.check-option span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.check-option strong {
+  color: var(--ink);
+  line-height: 1.25;
+}
+
+.check-option small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .date-grid {
@@ -1043,6 +1098,14 @@ textarea:focus-visible {
     grid-column: 1 / -1;
   }
 
+  .parent-picker-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .parent-status-toggle {
+    min-width: 0;
+  }
+
   .layer-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -1101,6 +1164,11 @@ textarea:focus-visible {
 
   .calendar-filter {
     padding: 0 8px;
+  }
+
+  .parent-status-toggle button {
+    padding: 0 6px;
+    font-size: 12px;
   }
 
   .calendar-day-cell {
