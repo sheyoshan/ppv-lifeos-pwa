@@ -174,6 +174,196 @@
   justify-self: start;
 }
 
+.weekly-alignment,
+.weekly-review-body,
+.weekly-detail-panel,
+.weekly-item-list,
+.issue-list {
+  display: grid;
+  gap: 12px;
+}
+
+.weekly-summary-grid,
+.weekly-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.weekly-intro,
+.weekly-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.weekly-intro p {
+  min-width: 0;
+}
+
+.summary-pill,
+.weekly-metric {
+  display: grid;
+  min-width: 0;
+  min-height: 76px;
+  align-content: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--field);
+  padding: 10px;
+  text-align: left;
+}
+
+.summary-pill strong,
+.weekly-metric strong {
+  color: var(--ink);
+  font-size: 26px;
+  line-height: 1;
+}
+
+.summary-pill span,
+.weekly-metric span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.summary-pill.high,
+.severity-pill.high {
+  border-color: #f1b8b4;
+  background: #fff1f0;
+  color: #a0342b;
+}
+
+.summary-pill.medium,
+.severity-pill.medium {
+  border-color: #e7c06b;
+  background: #fff8e6;
+  color: #8a5a00;
+}
+
+.summary-pill.low,
+.severity-pill.low {
+  border-color: var(--border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.weekly-metric {
+  width: 100%;
+  box-shadow: none;
+}
+
+.weekly-metric.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.weekly-detail-panel {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--field);
+  padding: 12px;
+}
+
+.weekly-panel-heading h3 {
+  margin: 2px 0 0;
+  color: var(--ink);
+}
+
+.weekly-item-row,
+.issue-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 10px;
+}
+
+.weekly-item-main {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  justify-content: stretch;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  text-align: left;
+}
+
+.weekly-item-main strong,
+.issue-row strong {
+  display: block;
+  overflow: hidden;
+  color: var(--ink);
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.weekly-item-main span,
+.weekly-item-main small,
+.issue-row p,
+.issue-row small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.weekly-item-main small,
+.issue-row p {
+  margin-top: 4px;
+}
+
+.weekly-item-actions,
+.issue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.issue-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.issue-filter-row button {
+  min-height: 34px;
+  padding: 0 10px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+}
+
+.issue-filter-row button.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.issue-row {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.severity-pill {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
 .encyclopedia {
   display: grid;
   gap: 14px;
@@ -1281,6 +1471,22 @@ textarea:focus-visible {
     padding: 6px;
   }
 
+  .weekly-summary-grid,
+  .weekly-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .weekly-item-row,
+  .issue-row {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  .weekly-item-actions,
+  .issue-actions {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+
   .search-control {
     grid-column: 1 / -1;
   }
@@ -1343,13 +1549,33 @@ textarea:focus-visible {
   }
 
   .section-heading,
-  .form-actions {
+  .form-actions,
+  .weekly-intro,
+  .weekly-panel-heading {
     align-items: stretch;
     flex-direction: column;
   }
 
   .section-heading button,
-  .form-actions button {
+  .form-actions button,
+  .weekly-intro button {
+    width: 100%;
+  }
+
+  .weekly-summary-grid,
+  .weekly-metric-grid,
+  .weekly-item-row,
+  .issue-row {
+    grid-template-columns: 1fr;
+  }
+
+  .weekly-item-actions,
+  .issue-actions {
+    grid-column: auto;
+  }
+
+  .weekly-item-actions button,
+  .issue-actions button {
     width: 100%;
   }
 

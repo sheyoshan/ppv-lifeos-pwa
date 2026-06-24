@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ppv-lifeos-v7'
+const CACHE_NAME = 'ppv-lifeos-v8'
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/favicon.svg']
 
 self.addEventListener('install', (event) => {

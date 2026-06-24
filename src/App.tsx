@@ -87,6 +87,57 @@ type ProjectManagementOutcome = {
   projects: ProjectManagementProject[]
 }
 
+type WeeklyRange = {
+  startDate: string
+  endDate: string
+}
+
+type WeeklyMetricId =
+  | 'completed-actions'
+  | 'overdue'
+  | 'unlinked'
+  | 'upcoming'
+  | 'active-outcomes'
+  | 'active-projects'
+
+type AlignmentIssueKind =
+  | 'action-without-project'
+  | 'project-without-outcome'
+  | 'outcome-without-goal'
+  | 'active-outcome-without-active-project'
+  | 'active-project-without-active-action'
+  | 'done-project-with-open-action'
+  | 'done-outcome-with-open-project'
+  | 'overdue-open-item'
+  | 'deadline-risk-project-without-active-action'
+
+type AlignmentSeverity = 'high' | 'medium' | 'low'
+
+type AlignmentIssue = {
+  kind: AlignmentIssueKind
+  item: LifeItem
+  title: string
+  description: string
+  severity: AlignmentSeverity
+  createAction?: {
+    label: string
+    layer: LayerId
+    parentId: string
+  }
+}
+
+type WeeklyMetric = {
+  id: WeeklyMetricId
+  label: string
+  items: LifeItem[]
+}
+
+type AlignmentIssueGroup = {
+  kind: AlignmentIssueKind
+  label: string
+  count: number
+}
+
 type LifeData = {
   version: 3
   exportedAt?: string
@@ -201,6 +252,24 @@ const statusLabels: Record<Status, string> = {
   'not-started': '未開始',
   active: '進行中',
   done: '完成',
+}
+
+const severityLabels: Record<AlignmentSeverity, string> = {
+  high: '高',
+  medium: '中',
+  low: '低',
+}
+
+const alignmentIssueLabels: Record<AlignmentIssueKind, string> = {
+  'action-without-project': '行動未連專案',
+  'project-without-outcome': '專案未連結果',
+  'outcome-without-goal': '結果未連目標',
+  'active-outcome-without-active-project': '結果無進行中專案',
+  'active-project-without-active-action': '專案無進行中行動',
+  'done-project-with-open-action': '完成專案仍有行動',
+  'done-outcome-with-open-project': '完成結果仍有專案',
+  'overdue-open-item': '逾期未完成',
+  'deadline-risk-project-without-active-action': '截止風險',
 }
 
 const sortFieldLabels: Record<SortField, string> = {
@@ -1044,6 +1113,15 @@ function App() {
               onCreate={() => startCreate('outcome')}
               onOpen={openItemRelationship}
             />
+
+            <WeeklyAlignmentCenter
+              items={items}
+              onCreateAction={(project) => startCreate('action', [project.id])}
+              onCreateProject={(outcome) => startCreate('project', [outcome.id])}
+              onEditItem={startEdit}
+              onOpenItem={openItemRelationship}
+              onToggleActionDone={(item) => updateStatus(item, item.status === 'done' ? 'active' : 'done')}
+            />
           </section>
         )}
 
@@ -1505,6 +1583,238 @@ function OutcomeFocusList({
         </div>
       )}
     </section>
+  )
+}
+
+function WeeklyAlignmentCenter({
+  items,
+  onCreateAction,
+  onCreateProject,
+  onEditItem,
+  onOpenItem,
+  onToggleActionDone,
+}: {
+  items: LifeItem[]
+  onCreateAction: (project: LifeItem) => void
+  onCreateProject: (outcome: LifeItem) => void
+  onEditItem: (item: LifeItem) => void
+  onOpenItem: (item: LifeItem) => void
+  onToggleActionDone: (item: LifeItem) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const [selectedMetricId, setSelectedMetricId] = useState<WeeklyMetricId>('overdue')
+  const [selectedIssueKind, setSelectedIssueKind] = useState<AlignmentIssueKind | 'all'>('all')
+  const weekRange = getWeekRange(currentDate())
+  const metrics = getWeeklyMetrics(items, weekRange)
+  const issues = getAlignmentIssues(items)
+  const issueGroups = getAlignmentIssueGroups(issues)
+  const selectedMetric = metrics.find((metric) => metric.id === selectedMetricId) ?? metrics[0]
+  const selectedIssues =
+    selectedIssueKind === 'all' ? issues : issues.filter((issue) => issue.kind === selectedIssueKind)
+  const overdueCount = metrics.find((metric) => metric.id === 'overdue')?.items.length ?? 0
+  const unlinkedCount = metrics.find((metric) => metric.id === 'unlinked')?.items.length ?? 0
+  const noActionProjectCount = issues.filter((issue) => issue.kind === 'active-project-without-active-action').length
+  const noProjectOutcomeCount = issues.filter((issue) => issue.kind === 'active-outcome-without-active-project').length
+
+  return (
+    <section className="section-block weekly-alignment">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">本週對齊</p>
+          <h2>週回顧與對齊檢查</h2>
+        </div>
+        <span className="count-pill">
+          {weekRange.startDate} - {weekRange.endDate}
+        </span>
+      </div>
+
+      <div className="weekly-summary-grid">
+        <SummaryPill label="逾期" value={overdueCount} tone={overdueCount > 0 ? 'high' : 'low'} />
+        <SummaryPill label="未連結" value={unlinkedCount} tone={unlinkedCount > 0 ? 'medium' : 'low'} />
+        <SummaryPill
+          label="無下一步專案"
+          value={noActionProjectCount}
+          tone={noActionProjectCount > 0 ? 'medium' : 'low'}
+        />
+        <SummaryPill
+          label="無專案結果"
+          value={noProjectOutcomeCount}
+          tone={noProjectOutcomeCount > 0 ? 'medium' : 'low'}
+        />
+      </div>
+
+      <div className="weekly-intro">
+        <p className="muted">用本週完成、逾期、即將到期與連結斷點，檢查行動是否真的推進結果。</p>
+        <button type="button" onClick={() => setExpanded((current) => !current)}>
+          {expanded ? '收合週回顧' : '開始週回顧'}
+        </button>
+      </div>
+
+      {expanded && (
+        <div className="weekly-review-body">
+          <div className="weekly-metric-grid" aria-label="本週總覽">
+            {metrics.map((metric) => (
+              <button
+                className={metric.id === selectedMetricId ? 'weekly-metric active' : 'weekly-metric'}
+                type="button"
+                key={metric.id}
+                onClick={() => setSelectedMetricId(metric.id)}
+              >
+                <strong>{metric.items.length}</strong>
+                <span>{metric.label}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="weekly-detail-panel">
+            <div className="weekly-panel-heading">
+              <div>
+                <p className="eyebrow">本週總覽</p>
+                <h3>{selectedMetric.label}</h3>
+              </div>
+              <span className="count-pill">{selectedMetric.items.length} 個</span>
+            </div>
+            <WeeklyItemList
+              items={selectedMetric.items}
+              allItems={items}
+              onEditItem={onEditItem}
+              onOpenItem={onOpenItem}
+              onToggleActionDone={onToggleActionDone}
+            />
+          </div>
+
+          <div className="weekly-detail-panel">
+            <div className="weekly-panel-heading">
+              <div>
+                <p className="eyebrow">Alignment</p>
+                <h3>對齊斷點</h3>
+              </div>
+              <span className="count-pill">{issues.length} 個</span>
+            </div>
+
+            <div className="issue-filter-row" aria-label="對齊斷點分類">
+              <button
+                className={selectedIssueKind === 'all' ? 'active' : ''}
+                type="button"
+                onClick={() => setSelectedIssueKind('all')}
+              >
+                全部 {issues.length}
+              </button>
+              {issueGroups.map((group) => (
+                <button
+                  className={selectedIssueKind === group.kind ? 'active' : ''}
+                  type="button"
+                  key={group.kind}
+                  onClick={() => setSelectedIssueKind(group.kind)}
+                >
+                  {group.label} {group.count}
+                </button>
+              ))}
+            </div>
+
+            <div className="issue-list">
+              {selectedIssues.length > 0 ? (
+                selectedIssues.map((issue) => (
+                  <article className="issue-row" key={`${issue.kind}-${issue.item.id}`}>
+                    <span className={`severity-pill ${issue.severity}`}>{severityLabels[issue.severity]}</span>
+                    <div>
+                      <strong>{issue.title}</strong>
+                      <p>{issue.description}</p>
+                      <small>{itemMeta(issue.item)}</small>
+                    </div>
+                    <div className="issue-actions">
+                      {issue.createAction && issue.createAction.layer === 'project' && (
+                        <button type="button" onClick={() => onCreateProject(issue.item)}>
+                          {issue.createAction.label}
+                        </button>
+                      )}
+                      {issue.createAction && issue.createAction.layer === 'action' && (
+                        <button type="button" onClick={() => onCreateAction(issue.item)}>
+                          {issue.createAction.label}
+                        </button>
+                      )}
+                      <button className="ghost-button" type="button" onClick={() => onOpenItem(issue.item)}>
+                        查看關係
+                      </button>
+                      <button className="ghost-button" type="button" onClick={() => onEditItem(issue.item)}>
+                        編輯
+                      </button>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <EmptyState label="目前沒有符合這個分類的對齊斷點" />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function SummaryPill({
+  label,
+  tone,
+  value,
+}: {
+  label: string
+  tone: AlignmentSeverity
+  value: number
+}) {
+  return (
+    <div className={`summary-pill ${tone}`}>
+      <strong>{value}</strong>
+      <span>{label}</span>
+    </div>
+  )
+}
+
+function WeeklyItemList({
+  allItems,
+  items,
+  onEditItem,
+  onOpenItem,
+  onToggleActionDone,
+}: {
+  allItems: LifeItem[]
+  items: LifeItem[]
+  onEditItem: (item: LifeItem) => void
+  onOpenItem: (item: LifeItem) => void
+  onToggleActionDone: (item: LifeItem) => void
+}) {
+  if (items.length === 0) return <EmptyState label="目前沒有符合這個總覽項目的物件" />
+
+  return (
+    <div className="weekly-item-list">
+      {items.map((item) => (
+        <article className="weekly-item-row" key={item.id}>
+          <span className={`node-badge layer-${item.layer}`}>{getLayer(item.layer).short}</span>
+          <button className="weekly-item-main" type="button" onClick={() => onOpenItem(item)}>
+            <strong>{item.title}</strong>
+            <span>{statusLabels[item.status]}</span>
+            <small>
+              {dateSummary(item) || `建立 ${item.createdDate}`} · {connectionSummary(item, allItems)}
+            </small>
+          </button>
+          <div className="weekly-item-actions">
+            {item.layer === 'action' && (
+              <button
+                className={item.status === 'done' ? 'check done' : 'check'}
+                type="button"
+                onClick={() => onToggleActionDone(item)}
+                aria-label={`切換完成：${item.title}`}
+              >
+                ✓
+              </button>
+            )}
+            <button className="ghost-button" type="button" onClick={() => onEditItem(item)}>
+              編輯
+            </button>
+          </div>
+        </article>
+      ))}
+    </div>
   )
 }
 
@@ -2411,6 +2721,259 @@ function compareParentOptions(left: LifeItem, right: LifeItem, selectedIds: Set<
 
   const updatedCompared = right.updatedDate.localeCompare(left.updatedDate)
   return updatedCompared === 0 ? left.title.localeCompare(right.title, 'zh-Hant') : updatedCompared
+}
+
+function getWeeklyMetrics(items: LifeItem[], weekRange: WeeklyRange): WeeklyMetric[] {
+  const completedActions = items
+    .filter(
+      (item) =>
+        item.layer === 'action' &&
+        item.status === 'done' &&
+        isDateInRange(item.completedDate, weekRange),
+    )
+    .sort(compareWorkItems)
+  const overdueItems = items.filter((item) => isOverdue(item)).sort(compareWorkItems)
+  const unlinkedItems = items
+    .filter((item) => Boolean(getLayer(item.layer).parent) && item.parentIds.length === 0)
+    .sort(compareWorkItems)
+  const upcomingItems = getUpcomingDueItems(items, currentDate(), 7)
+  const activeOutcomes = items
+    .filter((item) => item.layer === 'outcome' && item.status === 'active')
+    .sort(compareWorkItems)
+  const activeProjects = items
+    .filter((item) => item.layer === 'project' && item.status === 'active')
+    .sort(compareWorkItems)
+
+  return [
+    { id: 'completed-actions', label: '本週完成行動', items: completedActions },
+    { id: 'overdue', label: '逾期事項', items: overdueItems },
+    { id: 'unlinked', label: '未連結物件', items: unlinkedItems },
+    { id: 'upcoming', label: '接下來 7 天應完成', items: upcomingItems },
+    { id: 'active-outcomes', label: '進行中結果', items: activeOutcomes },
+    { id: 'active-projects', label: '進行中專案', items: activeProjects },
+  ]
+}
+
+function getAlignmentIssues(items: LifeItem[]): AlignmentIssue[] {
+  const issues: AlignmentIssue[] = []
+  const today = currentDate()
+  const nextSevenDays = addDays(today, 7)
+
+  items.forEach((item) => {
+    if (item.status !== 'done') {
+      if (item.layer === 'action' && !hasLinkedParentOfLayer(item, items, 'project')) {
+        issues.push(makeIssue('action-without-project', item, '這個行動沒有連到任何專案，容易變成孤立待辦。'))
+      }
+
+      if (item.layer === 'project' && !hasLinkedParentOfLayer(item, items, 'outcome')) {
+        issues.push(makeIssue('project-without-outcome', item, '這個專案沒有連到結果，難以判斷它要創造什麼交付物。'))
+      }
+
+      if (item.layer === 'outcome' && !hasLinkedParentOfLayer(item, items, 'goal')) {
+        issues.push(makeIssue('outcome-without-goal', item, '這個結果沒有連到目標，可能缺少上層方向。'))
+      }
+
+      if (isOverdue(item)) {
+        issues.push(makeIssue('overdue-open-item', item, '這個物件已超過應完成日，但狀態仍未完成。'))
+      }
+    }
+
+    if (
+      item.layer === 'outcome' &&
+      item.status === 'active' &&
+      !hasChildWithStatus(item, items, 'project', 'active')
+    ) {
+      issues.push(
+        makeIssue(
+          'active-outcome-without-active-project',
+          item,
+          '這個進行中結果目前沒有進行中的專案支撐。',
+          {
+            label: '新增專案',
+            layer: 'project',
+            parentId: item.id,
+          },
+        ),
+      )
+    }
+
+    if (
+      item.layer === 'project' &&
+      item.status === 'active' &&
+      !hasChildWithStatus(item, items, 'action', 'active')
+    ) {
+      issues.push(
+        makeIssue(
+          'active-project-without-active-action',
+          item,
+          '這個進行中專案目前沒有進行中的下一步行動。',
+          {
+            label: '新增行動',
+            layer: 'action',
+            parentId: item.id,
+          },
+        ),
+      )
+    }
+
+    if (item.layer === 'project' && item.status === 'done' && hasOpenChild(item, items, 'action')) {
+      issues.push(makeIssue('done-project-with-open-action', item, '這個專案已完成，但底下仍有未完成行動。'))
+    }
+
+    if (item.layer === 'outcome' && item.status === 'done' && hasOpenChild(item, items, 'project')) {
+      issues.push(makeIssue('done-outcome-with-open-project', item, '這個結果已完成，但底下仍有未完成或進行中的專案。'))
+    }
+
+    if (
+      item.layer === 'project' &&
+      item.status !== 'done' &&
+      item.deadlineDate >= today &&
+      item.deadlineDate <= nextSevenDays &&
+      !hasChildWithStatus(item, items, 'action', 'active')
+    ) {
+      issues.push(
+        makeIssue(
+          'deadline-risk-project-without-active-action',
+          item,
+          '這個專案的截止日期在 7 天內，但目前沒有進行中的行動。',
+          {
+            label: '新增行動',
+            layer: 'action',
+            parentId: item.id,
+          },
+        ),
+      )
+    }
+  })
+
+  return issues.sort(compareAlignmentIssues)
+}
+
+function getAlignmentIssueGroups(issues: AlignmentIssue[]): AlignmentIssueGroup[] {
+  return Object.entries(alignmentIssueLabels)
+    .map(([kind, label]) => ({
+      kind: kind as AlignmentIssueKind,
+      label,
+      count: issues.filter((issue) => issue.kind === kind).length,
+    }))
+    .filter((group) => group.count > 0)
+}
+
+function makeIssue(
+  kind: AlignmentIssueKind,
+  item: LifeItem,
+  description: string,
+  createAction?: AlignmentIssue['createAction'],
+): AlignmentIssue {
+  return {
+    kind,
+    item,
+    title: alignmentIssueLabels[kind],
+    description,
+    severity: getIssueSeverity(kind),
+    createAction,
+  }
+}
+
+function getIssueSeverity(kind: AlignmentIssueKind): AlignmentSeverity {
+  if (
+    kind === 'overdue-open-item' ||
+    kind === 'deadline-risk-project-without-active-action' ||
+    kind === 'done-project-with-open-action' ||
+    kind === 'done-outcome-with-open-project'
+  ) {
+    return 'high'
+  }
+
+  if (
+    kind === 'active-outcome-without-active-project' ||
+    kind === 'active-project-without-active-action'
+  ) {
+    return 'medium'
+  }
+
+  return 'low'
+}
+
+function compareAlignmentIssues(left: AlignmentIssue, right: AlignmentIssue) {
+  const severityCompared = severityRank(left.severity) - severityRank(right.severity)
+  if (severityCompared !== 0) return severityCompared
+
+  const kindCompared =
+    Object.keys(alignmentIssueLabels).indexOf(left.kind) -
+    Object.keys(alignmentIssueLabels).indexOf(right.kind)
+  if (kindCompared !== 0) return kindCompared
+
+  return compareWorkItems(left.item, right.item)
+}
+
+function severityRank(severity: AlignmentSeverity) {
+  if (severity === 'high') return 0
+  if (severity === 'medium') return 1
+  return 2
+}
+
+function hasLinkedParentOfLayer(item: LifeItem, items: LifeItem[], parentLayer: LayerId) {
+  return item.parentIds.some((parentId) =>
+    items.some((candidate) => candidate.id === parentId && candidate.layer === parentLayer),
+  )
+}
+
+function hasChildWithStatus(item: LifeItem, items: LifeItem[], childLayer: LayerId, status: Status) {
+  return items.some(
+    (candidate) =>
+      candidate.layer === childLayer &&
+      candidate.status === status &&
+      candidate.parentIds.includes(item.id),
+  )
+}
+
+function hasOpenChild(item: LifeItem, items: LifeItem[], childLayer: LayerId) {
+  return items.some(
+    (candidate) =>
+      candidate.layer === childLayer &&
+      candidate.status !== 'done' &&
+      candidate.parentIds.includes(item.id),
+  )
+}
+
+function getWeekRange(date: string): WeeklyRange {
+  const target = parseLocalDate(date)
+  const day = target.getDay() || 7
+  const weekStart = new Date(target)
+  weekStart.setDate(target.getDate() - day + 1)
+
+  const weekEnd = new Date(weekStart)
+  weekEnd.setDate(weekStart.getDate() + 6)
+
+  return {
+    startDate: formatLocalDate(weekStart),
+    endDate: formatLocalDate(weekEnd),
+  }
+}
+
+function isDateInRange(date: string, range: WeeklyRange) {
+  return Boolean(date && date >= range.startDate && date <= range.endDate)
+}
+
+function getUpcomingDueItems(items: LifeItem[], startDate: string, days: number) {
+  const endDate = addDays(startDate, days)
+
+  return items
+    .filter(
+      (item) =>
+        item.status !== 'done' &&
+        Boolean(item.dueDate) &&
+        item.dueDate >= startDate &&
+        item.dueDate <= endDate,
+    )
+    .sort(compareWorkItems)
+}
+
+function addDays(date: string, days: number) {
+  const nextDate = parseLocalDate(date)
+  nextDate.setDate(nextDate.getDate() + days)
+  return formatLocalDate(nextDate)
 }
 
 function getProjectManagementBranches(items: LifeItem[]): ProjectManagementOutcome[] {
