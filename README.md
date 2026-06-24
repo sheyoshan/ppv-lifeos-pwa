@@ -11,7 +11,7 @@ PPV Life OS 是一個單頁 PWA，提供五個主要頁籤：
 - `首頁`：聚焦今日行動、進行中專案、未連結物件，以及最重要的進行中結果。
 - `架構`：瀏覽七層 PPV 物件，篩選、排序、查看源頭關係，並新增或編輯物件。
 - `行動`：集中處理最底層的下一步行動，支援快速標記完成。
-- `月曆`：以月視圖橫條顯示行動、專案、結果的時間跨度。
+- `月曆`：以月視圖橫條顯示行動、專案、結果從開始日期到應完成日的計畫跨度。
 - `資料`：匯出/匯入 JSON、本機資料狀態，以及內建 PPV Life OS 百科全書。
 
 目前版本沒有後端、帳號、雲端同步、提醒、推播或外部行事曆整合。所有核心資料都保存在目前裝置與瀏覽器的 `localStorage`。
@@ -109,14 +109,14 @@ Principles 原則
 
 月曆頁用月視圖顯示 `action`、`project`、`outcome` 三種物件：
 
-- 使用 `startDate` 到 `dueDate` 顯示期間橫條。
+- 使用 `startDate` 到 `dueDate` 顯示期間橫條，其中 `dueDate` 是應完成日。
 - 若只有 `startDate` 或只有 `dueDate`，顯示為單日橫條。
 - 若 `startDate > dueDate`，只在顯示層用較早日期到較晚日期，不修改原始資料。
 - 跨週會切成多段顯示，跨月會裁切在可視範圍。
 - 可用多選篩選切換行動、專案、結果。
 - 點擊橫條會切到架構頁，開啟該物件源頭關係視圖。
 
-注意：月曆期間視圖不使用 `scheduledDate` 來定位橫條；它只使用 `startDate` 與 `dueDate`。
+注意：`deadlineDate` 是截止日期，用來表示絕對不能晚於此日的死線；第一版不把截止日期作為月曆橫條終點。
 
 ### 資料
 
@@ -213,7 +213,7 @@ Principles 原則
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "exportedAt": "2026-06-24T10:00:00.000Z",
   "items": []
 }
@@ -233,8 +233,8 @@ Principles 原則
   "updatedDate": "2026-06-24",
   "startDate": "2026-06-10",
   "completedDate": "",
-  "scheduledDate": "2026-06-20",
-  "dueDate": "2026-06-30"
+  "dueDate": "2026-06-20",
+  "deadlineDate": "2026-06-30"
 }
 ```
 
@@ -250,8 +250,8 @@ Principles 原則
 - `updatedDate`：修改日期，格式 `YYYY-MM-DD`。
 - `startDate`：開始日期，月曆橫條的起點。
 - `completedDate`：完成日期。
-- `scheduledDate`：預計日期，用於架構頁日期篩選與部分排序。
-- `dueDate`：截止日期，月曆橫條的終點，也用於日期篩選與排序。
+- `dueDate`：應完成日，也就是專案管理中的預計完成日期；月曆橫條的終點，也用於日期篩選與排序。
+- `deadlineDate`：截止日期，也就是絕對不能晚於此日的死線，用於摘要與排序。
 
 ### 日期規則
 
@@ -259,19 +259,23 @@ Principles 原則
 
 目前不同功能對日期的使用方式如下：
 
-- 架構頁日期篩選：優先看 `scheduledDate`，沒有則看 `dueDate`。
-- 首頁進行中結果排序：優先看 `dueDate`，沒有則看 `scheduledDate`。
-- 月曆橫條：使用 `startDate` 到 `dueDate`。
+- 架構頁日期篩選：以 `dueDate` 應完成日判斷逾期、今天、本週。
+- 首頁進行中結果排序：優先看 `dueDate` 應完成日。
+- 月曆橫條：使用 `startDate` 到 `dueDate` 應完成日。
+- 截止日期：`deadlineDate` 第一版只作為截止資訊、排序欄位與摘要顯示，不作為月曆橫條終點。
 - 完成行動或物件：若狀態改為 `done` 且沒有 `completedDate`，會補上當日日期。
 
-### 舊資料相容
+### 資料版本與舊格式
 
-匯入時會經過 normalization：
+目前正式資料格式是 `version: 3`。這是破壞性 schema 更新，不再支援舊版 `scheduledDate` 欄位。
 
-- 舊版 `parentId` 會轉成 `parentIds`。
-- 舊版 `createdAt`、`updatedAt` 會轉成日期格式。
-- 不合法或缺漏的日期會轉成空字串。
-- 不合法物件會被過濾。
+匯入或載入時會過濾不符合新版格式的物件：
+
+- 含有舊 `scheduledDate` 的物件會被視為無效。
+- 缺少 `deadlineDate` 的物件會被視為無效。
+- `parentIds` 必須是陣列，不再從舊 `parentId` 自動轉換。
+- 舊版 `createdAt`、`updatedAt` 不再自動轉換。
+- 日期仍會正規化為 `YYYY-MM-DD` 或空字串，但欄位本身必須存在。
 
 ## 工程架構
 
@@ -358,7 +362,7 @@ npm run preview
 
 此專案使用 `public/sw.js` 快取 app shell。若 UI 或主要靜態內容更新後 iPhone 仍顯示舊版：
 
-1. 確認 `public/sw.js` 的 `CACHE_NAME` 已升版，例如 `ppv-lifeos-v5` 改為下一版。
+1. 確認 `public/sw.js` 的 `CACHE_NAME` 已升版，例如 `ppv-lifeos-v6` 改為下一版。
 2. 確認 GitHub Pages deploy 成功。
 3. 在 iPhone 關閉 PWA 後重新開啟。
 4. 必要時用 Safari 開一次網站，再重新加入主畫面。
@@ -452,7 +456,7 @@ https://sheyoshan.github.io/ppv-lifeos-pwa/
 
 ### 月曆會同步 Apple Calendar 或 Google Calendar 嗎？
 
-不會。目前月曆是 app 內部視圖，只用 `startDate` 與 `dueDate` 顯示行動、專案、結果。
+不會。目前月曆是 app 內部視圖，只用 `startDate` 與 `dueDate` 應完成日顯示行動、專案、結果。
 
 ### 有提醒或 Web Push 嗎？
 

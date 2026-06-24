@@ -20,8 +20,8 @@ type LinkFilter = 'all' | 'unlinked-parent' | 'has-parent' | 'has-child' | 'no-c
 type SortField =
   | 'createdDate'
   | 'startDate'
-  | 'scheduledDate'
   | 'dueDate'
+  | 'deadlineDate'
   | 'completedDate'
   | 'updatedDate'
   | 'title'
@@ -39,8 +39,8 @@ type LifeItem = {
   updatedDate: string
   startDate: string
   completedDate: string
-  scheduledDate: string
   dueDate: string
+  deadlineDate: string
 }
 
 type Draft = Omit<LifeItem, 'id'>
@@ -77,16 +77,12 @@ type MonthDay = {
 }
 
 type LifeData = {
-  version: 2
+  version: 3
   exportedAt?: string
   items: LifeItem[]
 }
 
-type LegacyItem = Partial<LifeItem> & {
-  parentId?: string | null
-  createdAt?: string
-  updatedAt?: string
-}
+type ItemInput = Partial<LifeItem> & Record<string, unknown>
 
 type AncestorNode = {
   id: string
@@ -199,8 +195,8 @@ const statusLabels: Record<Status, string> = {
 const sortFieldLabels: Record<SortField, string> = {
   createdDate: '建立日期',
   startDate: '開始日期',
-  scheduledDate: '預計日期',
-  dueDate: '截止日期',
+  dueDate: '應完成日',
+  deadlineDate: '截止日期',
   completedDate: '完成日期',
   updatedDate: '修改日期',
   title: '名稱',
@@ -224,12 +220,12 @@ const defaultCalendarLayerFilters: Record<CalendarLayer, boolean> = {
 
 const dateFieldLabels: Array<{ key: keyof Pick<
   Draft,
-  'createdDate' | 'startDate' | 'completedDate' | 'scheduledDate' | 'dueDate'
+  'createdDate' | 'startDate' | 'completedDate' | 'dueDate' | 'deadlineDate'
 >; label: string }> = [
   { key: 'createdDate', label: '建立日期' },
   { key: 'startDate', label: '開始日期' },
-  { key: 'scheduledDate', label: '預計日期' },
-  { key: 'dueDate', label: '截止日期' },
+  { key: 'dueDate', label: '應完成日' },
+  { key: 'deadlineDate', label: '截止日期' },
   { key: 'completedDate', label: '完成日期' },
 ]
 
@@ -431,7 +427,7 @@ const encyclopediaSections: EncyclopediaSection[] = [
         ],
         practice: [
           '寫結果時使用「完成、建立、交付、取得、達成」這類可驗收動詞。',
-          '每個目標至少放 1 到 3 個結果，並設定預計或截止日期。',
+          '每個目標至少放 1 到 3 個結果，並設定應完成日或截止日期。',
         ],
         mistakes: [
           '把活動寫成結果，例如「持續研究」。研究本身不是結果，研究報告或決策表才是。',
@@ -553,14 +549,14 @@ const encyclopediaSections: EncyclopediaSection[] = [
         title: '日期、狀態與月曆節奏',
         concept: [
           '日期不是壓迫自己的工具，而是幫你看見時間承諾。狀態則用來表示物件目前的位置。',
-          '月曆橫條用開始日期到截止日期顯示行動、專案與結果的時間跨度。',
+          '月曆橫條用開始日期到應完成日顯示行動、專案與結果的計畫工作跨度。',
         ],
         why: [
           '沒有日期，承諾容易漂浮；日期太多，系統會變成壓力來源。重點是讓時間和成果保持可見。',
         ],
         practice: [
-          '建立日期與修改日期由系統幫你留下脈絡。開始日期代表何時開始投入。截止日期代表最晚要交付或完成。',
-          '預計日期可用於不一定有硬期限、但希望被安排的事項。完成日期用來留下實際結束時間。',
+          '建立日期與修改日期由系統幫你留下脈絡。開始日期代表何時開始投入。應完成日代表計畫上應該交付的日期。',
+          '截止日期代表絕對不能晚於此日的死線，用來保留 buffer。完成日期用來留下實際結束時間。',
           '未開始表示還不該投入；進行中表示正在推進；完成表示已達到完成條件。',
         ],
         mistakes: [
@@ -569,7 +565,7 @@ const encyclopediaSections: EncyclopediaSection[] = [
         ],
         examples: [
           '專案 6/1 開始、6/14 截止，月曆會顯示兩週跨度，提醒它不是單日任務。',
-          '只有截止日期的行動會顯示成單日，代表它只有一個清楚時間點。',
+          '只有應完成日的行動會顯示成單日，代表它只有一個清楚計畫完成點。',
         ],
       },
       {
@@ -745,7 +741,7 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, items }))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 3, items }))
   }, [items])
 
   useEffect(() => {
@@ -870,8 +866,8 @@ function App() {
       updatedDate: item.updatedDate,
       startDate: item.startDate,
       completedDate: item.completedDate,
-      scheduledDate: item.scheduledDate,
       dueDate: item.dueDate,
+      deadlineDate: item.deadlineDate,
     })
     setActiveLayer(item.layer)
     setActiveTab('map')
@@ -952,7 +948,7 @@ function App() {
 
   function exportJson() {
     const payload: LifeData = {
-      version: 2,
+      version: 3,
       exportedAt: new Date().toISOString(),
       items,
     }
@@ -1657,9 +1653,9 @@ function CalendarView({
         {!hasActiveLayer ? (
           <EmptyState label="請至少開啟一個層級篩選" />
         ) : entries.length === 0 ? (
-          <EmptyState label="這個月沒有具有開始或截止日期的行動、專案或結果" />
+          <EmptyState label="這個月沒有具有開始日期或應完成日的行動、專案或結果" />
         ) : (
-          <p className="calendar-hint">橫條使用開始日期到截止日期；缺一個日期時顯示為單日。</p>
+          <p className="calendar-hint">橫條使用開始日期到應完成日；截止日期作為 buffer 死線資訊。</p>
         )}
       </div>
     </section>
@@ -1832,8 +1828,8 @@ function MapListControls({
               <option value="updatedDate">修改日期</option>
               <option value="createdDate">建立日期</option>
               <option value="startDate">開始日期</option>
-              <option value="scheduledDate">預計日期</option>
-              <option value="dueDate">截止日期</option>
+              <option value="dueDate">應完成日</option>
+              <option value="deadlineDate">截止日期</option>
               <option value="completedDate">完成日期</option>
               <option value="title">名稱</option>
             </select>
@@ -1965,8 +1961,21 @@ function normalizeMapPreference(preference: Partial<MapPreference>): MapPreferen
 
 function normalizeItem(item: unknown): LifeItem | null {
   if (!item || typeof item !== 'object') return null
-  const candidate = item as LegacyItem
+  const candidate = item as ItemInput
+  if ('scheduledDate' in candidate) return null
   if (typeof candidate.id !== 'string' || !isLayer(candidate.layer) || typeof candidate.title !== 'string') {
+    return null
+  }
+  if (
+    typeof candidate.note !== 'string' ||
+    !Array.isArray(candidate.parentIds) ||
+    typeof candidate.createdDate !== 'string' ||
+    typeof candidate.updatedDate !== 'string' ||
+    typeof candidate.startDate !== 'string' ||
+    typeof candidate.completedDate !== 'string' ||
+    typeof candidate.dueDate !== 'string' ||
+    typeof candidate.deadlineDate !== 'string'
+  ) {
     return null
   }
 
@@ -1974,19 +1983,15 @@ function normalizeItem(item: unknown): LifeItem | null {
     id: candidate.id,
     layer: candidate.layer,
     title: candidate.title,
-    note: typeof candidate.note === 'string' ? candidate.note : '',
-    parentIds: Array.isArray(candidate.parentIds)
-      ? candidate.parentIds.filter((id): id is string => typeof id === 'string')
-      : candidate.parentId
-        ? [candidate.parentId]
-        : [],
+    note: candidate.note,
+    parentIds: candidate.parentIds.filter((id): id is string => typeof id === 'string'),
     status: isStatus(candidate.status) ? candidate.status : 'active',
-    createdDate: normalizeDate(candidate.createdDate || candidate.createdAt),
-    updatedDate: normalizeDate(candidate.updatedDate || candidate.updatedAt),
+    createdDate: normalizeDate(candidate.createdDate),
+    updatedDate: normalizeDate(candidate.updatedDate),
     startDate: normalizeDate(candidate.startDate),
     completedDate: normalizeDate(candidate.completedDate),
-    scheduledDate: normalizeDate(candidate.scheduledDate),
     dueDate: normalizeDate(candidate.dueDate),
+    deadlineDate: normalizeDate(candidate.deadlineDate),
   }
 }
 
@@ -2023,8 +2028,8 @@ function isSortField(field: unknown): field is SortField {
   return (
     field === 'createdDate' ||
     field === 'startDate' ||
-    field === 'scheduledDate' ||
     field === 'dueDate' ||
+    field === 'deadlineDate' ||
     field === 'completedDate' ||
     field === 'updatedDate' ||
     field === 'title'
@@ -2055,8 +2060,8 @@ function emptyDraft(layer: LayerId): Draft {
     updatedDate: today,
     startDate: '',
     completedDate: '',
-    scheduledDate: '',
     dueDate: '',
+    deadlineDate: '',
   }
 }
 
@@ -2102,7 +2107,7 @@ function compareOutcomeFocus(left: LifeItem, right: LifeItem) {
 }
 
 function getOutcomePriorityDate(item: LifeItem) {
-  return item.dueDate || item.scheduledDate
+  return item.dueDate
 }
 
 function getCalendarRangeEntries(
@@ -2277,10 +2282,10 @@ function daysBetween(startDate: string, endDate: string) {
 function matchesDateFilter(item: LifeItem, filter: DateFilter) {
   if (filter === 'all') return true
   if (filter === 'done') return item.status === 'done'
-  if (filter === 'unscheduled') return !hasAnyScheduleDate(item)
+  if (filter === 'unscheduled') return !hasDueDate(item)
   if (filter === 'overdue') return isOverdue(item)
-  if (filter === 'today') return isToday(getScheduleDate(item))
-  if (filter === 'this-week') return isThisWeek(getScheduleDate(item))
+  if (filter === 'today') return isToday(getDueDate(item))
+  if (filter === 'this-week') return isThisWeek(getDueDate(item))
   return true
 }
 
@@ -2370,23 +2375,23 @@ function itemMeta(item: LifeItem) {
 
 function dateSummary(item: LifeItem) {
   const parts = [
-    item.scheduledDate ? `預計 ${item.scheduledDate}` : '',
-    item.dueDate ? `截止 ${item.dueDate}` : '',
+    item.dueDate ? `應完成 ${item.dueDate}` : '',
+    item.deadlineDate ? `截止 ${item.deadlineDate}` : '',
     item.completedDate ? `完成 ${item.completedDate}` : '',
   ].filter(Boolean)
   return parts.join(' · ')
 }
 
-function getScheduleDate(item: LifeItem) {
-  return item.scheduledDate || item.dueDate
+function getDueDate(item: LifeItem) {
+  return item.dueDate
 }
 
-function hasAnyScheduleDate(item: LifeItem) {
-  return Boolean(getScheduleDate(item))
+function hasDueDate(item: LifeItem) {
+  return Boolean(getDueDate(item))
 }
 
 function isOverdue(item: LifeItem) {
-  const date = getScheduleDate(item)
+  const date = getDueDate(item)
   return Boolean(date && item.status !== 'done' && date < currentDate())
 }
 
