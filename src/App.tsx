@@ -28,6 +28,8 @@ type SortField =
   | 'title'
 type SortDirection = 'asc' | 'desc'
 type CalendarLayer = Extract<LayerId, 'outcome' | 'project' | 'action'>
+type CalendarStatusFilter = 'all' | Status | 'overdue' | 'upcoming'
+type CalendarRiskTone = 'normal' | 'buffer' | 'late' | 'deadline-risk' | 'done'
 
 type LifeItem = {
   id: string
@@ -68,6 +70,23 @@ type CalendarBarSegment = {
   lane: number
   continuesBefore: boolean
   continuesAfter: boolean
+}
+
+type CalendarDeadlineSegment = {
+  entry: CalendarRangeEntry
+  weekIndex: number
+  startColumn: number
+  endColumn: number
+  lane: number
+}
+
+type CalendarDeadlineFlag = {
+  entry: CalendarRangeEntry
+  weekIndex: number
+  column: number
+  lane: number
+  tone: CalendarRiskTone
+  label: string
 }
 
 type MonthDay = {
@@ -246,12 +265,29 @@ const layers: Array<{
 ]
 
 const calendarLayerIds: CalendarLayer[] = ['action', 'project', 'outcome']
+const calendarStatusFilterIds: CalendarStatusFilter[] = [
+  'all',
+  'not-started',
+  'active',
+  'done',
+  'overdue',
+  'upcoming',
+]
 const weekdayLabels = ['一', '二', '三', '四', '五', '六', '日']
 
 const statusLabels: Record<Status, string> = {
   'not-started': '未開始',
   active: '進行中',
   done: '完成',
+}
+
+const calendarStatusFilterLabels: Record<CalendarStatusFilter, string> = {
+  all: '全部',
+  'not-started': '未開始',
+  active: '進行中',
+  done: '完成',
+  overdue: '逾期',
+  upcoming: '7天內',
 }
 
 const severityLabels: Record<AlignmentSeverity, string> = {
@@ -816,6 +852,8 @@ function App() {
   const [calendarLayerFilters, setCalendarLayerFilters] = useState<Record<CalendarLayer, boolean>>(
     () => ({ ...defaultCalendarLayerFilters }),
   )
+  const [calendarStatusFilter, setCalendarStatusFilter] = useState<CalendarStatusFilter>('all')
+  const [selectedCalendarItemId, setSelectedCalendarItemId] = useState('')
   const [activeEncyclopediaId, setActiveEncyclopediaId] = useState(firstEncyclopediaArticleId)
   const [notice, setNotice] = useState('資料只保存在這台裝置的瀏覽器中。')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -839,7 +877,14 @@ function App() {
   const featuredOutcomes = getFeaturedOutcomes(activeOutcomes)
   const unlinkedItems = items.filter((item) => getLayer(item.layer).parent && item.parentIds.length === 0)
   const selectedItem = items.find((item) => item.id === selectedItemId) ?? null
-  const calendarEntries = getCalendarRangeEntries(items, calendarLayerFilters, calendarMonth)
+  const calendarEntries = getCalendarRangeEntries(
+    items,
+    calendarLayerFilters,
+    calendarMonth,
+    calendarStatusFilter,
+  )
+  const selectedCalendarEntry =
+    calendarEntries.find((entry) => entry.item.id === selectedCalendarItemId) ?? null
 
   function updateActiveMapPreference(patch: Partial<MapPreference>) {
     setMapPreferencesByLayer((current) => ({
@@ -1273,14 +1318,22 @@ function App() {
 
         {activeTab === 'calendar' && (
           <CalendarView
+            allItems={items}
             entries={calendarEntries}
             layerFilters={calendarLayerFilters}
             month={calendarMonth}
+            selectedEntry={selectedCalendarEntry}
+            statusFilter={calendarStatusFilter}
+            onCloseDetail={() => setSelectedCalendarItemId('')}
+            onEditItem={startEdit}
             onLayerToggle={toggleCalendarLayer}
             onNextMonth={showNextCalendarMonth}
             onOpenItem={openItemRelationship}
             onPreviousMonth={showPreviousCalendarMonth}
+            onSelectItem={(item) => setSelectedCalendarItemId(item.id)}
+            onStatusFilterChange={setCalendarStatusFilter}
             onToday={showCurrentCalendarMonth}
+            onToggleActionDone={(item) => updateStatus(item, item.status === 'done' ? 'active' : 'done')}
           />
         )}
 
@@ -2113,28 +2166,52 @@ function EncyclopediaArticlePart({
 }
 
 function CalendarView({
+  allItems,
   entries,
   layerFilters,
   month,
+  selectedEntry,
+  statusFilter,
+  onCloseDetail,
+  onEditItem,
   onLayerToggle,
   onNextMonth,
   onOpenItem,
   onPreviousMonth,
+  onSelectItem,
+  onStatusFilterChange,
   onToday,
+  onToggleActionDone,
 }: {
+  allItems: LifeItem[]
   entries: CalendarRangeEntry[]
   layerFilters: Record<CalendarLayer, boolean>
   month: string
+  selectedEntry: CalendarRangeEntry | null
+  statusFilter: CalendarStatusFilter
+  onCloseDetail: () => void
+  onEditItem: (item: LifeItem) => void
   onLayerToggle: (layer: CalendarLayer) => void
   onNextMonth: () => void
   onOpenItem: (item: LifeItem) => void
   onPreviousMonth: () => void
+  onSelectItem: (item: LifeItem) => void
+  onStatusFilterChange: (filter: CalendarStatusFilter) => void
   onToday: () => void
+  onToggleActionDone: (item: LifeItem) => void
 }) {
   const weeks = getCalendarWeeks(month)
   const segments = buildCalendarWeekSegments(entries, weeks)
+  const deadlineSegments = buildCalendarDeadlineSegments(entries, weeks, segments)
+  const deadlineFlags = buildCalendarDeadlineFlags(entries, weeks, segments)
   const segmentsByWeek = weeks.map((_, weekIndex) =>
     segments.filter((segment) => segment.weekIndex === weekIndex),
+  )
+  const deadlineSegmentsByWeek = weeks.map((_, weekIndex) =>
+    deadlineSegments.filter((segment) => segment.weekIndex === weekIndex),
+  )
+  const deadlineFlagsByWeek = weeks.map((_, weekIndex) =>
+    deadlineFlags.filter((flag) => flag.weekIndex === weekIndex),
   )
   const hasActiveLayer = calendarLayerIds.some((layer) => layerFilters[layer])
 
@@ -2172,6 +2249,20 @@ function CalendarView({
           ))}
         </div>
 
+        <div className="calendar-status-filters" aria-label="月曆狀態篩選">
+          {calendarStatusFilterIds.map((filter) => (
+            <button
+              className={statusFilter === filter ? 'calendar-status-filter active' : 'calendar-status-filter'}
+              type="button"
+              key={filter}
+              onClick={() => onStatusFilterChange(filter)}
+              aria-pressed={statusFilter === filter}
+            >
+              {calendarStatusFilterLabels[filter]}
+            </button>
+          ))}
+        </div>
+
         <div className="calendar-weekdays" aria-hidden="true">
           {weekdayLabels.map((weekday) => (
             <span key={weekday}>{weekday}</span>
@@ -2181,6 +2272,8 @@ function CalendarView({
         <div className="calendar-range-grid">
           {weeks.map((week, weekIndex) => {
             const weekSegments = segmentsByWeek[weekIndex]
+            const weekDeadlineSegments = deadlineSegmentsByWeek[weekIndex]
+            const weekDeadlineFlags = deadlineFlagsByWeek[weekIndex]
             const laneCount = weekSegments.reduce(
               (maximum, segment) => Math.max(maximum, segment.lane + 1),
               0,
@@ -2217,13 +2310,16 @@ function CalendarView({
                       gridColumn: `${segment.startColumn} / ${segment.endColumn + 1}`,
                       gridRow: segment.lane + 1,
                     } as CSSProperties
-                    const label = `${getLayer(entry.layer).label} ${entry.item.title}，${entry.startDate} 到 ${entry.endDate}，${statusLabels[entry.item.status]}`
+                    const riskTone = getCalendarRiskTone(entry.item)
+                    const label = `${getLayer(entry.layer).label} ${entry.item.title}，${entry.startDate} 到 ${entry.endDate}，${statusLabels[entry.item.status]}${entry.item.deadlineDate ? `，截止 ${entry.item.deadlineDate}` : ''}`
 
                     return (
                       <button
                         className={[
                           'calendar-bar',
                           `layer-${entry.layer}`,
+                          `risk-${riskTone}`,
+                          selectedEntry?.item.id === entry.item.id ? 'selected' : '',
                           segment.continuesBefore ? 'continues-before' : '',
                           segment.continuesAfter ? 'continues-after' : '',
                         ]
@@ -2234,10 +2330,43 @@ function CalendarView({
                         style={barStyle}
                         title={label}
                         aria-label={label}
-                        onClick={() => onOpenItem(entry.item)}
+                        onClick={() => onSelectItem(entry.item)}
                       >
                         <span className="calendar-bar-title">{entry.item.title}</span>
                       </button>
+                    )
+                  })}
+                  {weekDeadlineSegments.map((segment) => {
+                    const bufferStyle = {
+                      gridColumn: `${segment.startColumn} / ${segment.endColumn + 1}`,
+                      gridRow: segment.lane + 1,
+                    } as CSSProperties
+
+                    return (
+                      <span
+                        className="calendar-deadline-buffer"
+                        key={`buffer-${segment.entry.item.id}-${weekIndex}-${segment.startColumn}-${segment.endColumn}`}
+                        style={bufferStyle}
+                        title={`${segment.entry.item.title} buffer：${segment.entry.item.dueDate} 到 ${segment.entry.item.deadlineDate}`}
+                      />
+                    )
+                  })}
+                  {weekDeadlineFlags.map((flag) => {
+                    const flagStyle = {
+                      gridColumn: `${flag.column} / ${flag.column + 1}`,
+                      gridRow: flag.lane + 1,
+                    } as CSSProperties
+
+                    return (
+                      <span
+                        className={`calendar-deadline-flag risk-${flag.tone}`}
+                        key={`deadline-${flag.entry.item.id}-${weekIndex}-${flag.column}`}
+                        style={flagStyle}
+                        title={flag.label}
+                        aria-label={flag.label}
+                      >
+                        截
+                      </span>
                     )
                   })}
                 </div>
@@ -2249,12 +2378,97 @@ function CalendarView({
         {!hasActiveLayer ? (
           <EmptyState label="請至少開啟一個層級篩選" />
         ) : entries.length === 0 ? (
-          <EmptyState label="這個月沒有具有開始日期或應完成日的行動、專案或結果" />
+          <EmptyState label="這個月沒有符合篩選且具有開始日期或應完成日的行動、專案或結果" />
         ) : (
           <p className="calendar-hint">橫條使用開始日期到應完成日；截止日期作為 buffer 死線資訊。</p>
         )}
+
+        {selectedEntry && (
+          <CalendarDetailPanel
+            allItems={allItems}
+            entry={selectedEntry}
+            onClose={onCloseDetail}
+            onEdit={onEditItem}
+            onOpen={onOpenItem}
+            onToggleActionDone={onToggleActionDone}
+          />
+        )}
       </div>
     </section>
+  )
+}
+
+function CalendarDetailPanel({
+  allItems,
+  entry,
+  onClose,
+  onEdit,
+  onOpen,
+  onToggleActionDone,
+}: {
+  allItems: LifeItem[]
+  entry: CalendarRangeEntry
+  onClose: () => void
+  onEdit: (item: LifeItem) => void
+  onOpen: (item: LifeItem) => void
+  onToggleActionDone: (item: LifeItem) => void
+}) {
+  const { item } = entry
+  const riskTone = getCalendarRiskTone(item)
+  const detailMeta = getCalendarDetailMeta(item)
+
+  return (
+    <article className={`calendar-detail-panel risk-${riskTone}`}>
+      <div className="calendar-detail-heading">
+        <div className="calendar-detail-title">
+          <span className={`node-badge layer-${item.layer}`}>{getLayer(item.layer).short}</span>
+          <div>
+            <p className="eyebrow">{getLayer(item.layer).label}</p>
+            <h3>{item.title}</h3>
+          </div>
+        </div>
+        <span className={`calendar-risk-pill risk-${riskTone}`}>{calendarRiskText(item)}</span>
+      </div>
+
+      <p className="muted">{item.note || connectionSummary(item, allItems)}</p>
+
+      <div className="calendar-detail-grid">
+        <DetailMeta label="狀態" value={statusLabels[item.status]} />
+        <DetailMeta label="開始日期" value={item.startDate || '未設定'} />
+        <DetailMeta label="應完成日" value={item.dueDate || '未設定'} />
+        <DetailMeta label="截止日期" value={item.deadlineDate || '未設定'} />
+        <DetailMeta label="完成日期" value={item.completedDate || '未完成'} />
+        <DetailMeta label="顯示期間" value={`${entry.startDate} - ${entry.endDate}`} />
+        <DetailMeta label="時間狀態" value={detailMeta} />
+        <DetailMeta label="連結" value={connectionSummary(item, allItems)} />
+      </div>
+
+      <div className="calendar-detail-actions">
+        <button type="button" onClick={() => onOpen(item)}>
+          查看關係
+        </button>
+        <button className="ghost-button" type="button" onClick={() => onEdit(item)}>
+          編輯
+        </button>
+        {item.layer === 'action' && (
+          <button className="ghost-button" type="button" onClick={() => onToggleActionDone(item)}>
+            {item.status === 'done' ? '改回進行中' : '標記完成'}
+          </button>
+        )}
+        <button className="ghost-button" type="button" onClick={onClose}>
+          關閉
+        </button>
+      </div>
+    </article>
+  )
+}
+
+function DetailMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="detail-meta">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
   )
 }
 
@@ -3033,6 +3247,47 @@ function dueCountdownTone(item: LifeItem) {
   return 'upcoming'
 }
 
+function getCalendarRiskTone(item: LifeItem): CalendarRiskTone {
+  const today = currentDate()
+
+  if (item.status === 'done') return 'done'
+  if (item.deadlineDate && item.dueDate && item.deadlineDate < item.dueDate) return 'deadline-risk'
+  if (item.deadlineDate && item.deadlineDate < today) return 'late'
+  if (item.dueDate && item.dueDate < today && item.deadlineDate && item.deadlineDate >= today) return 'buffer'
+  if (item.dueDate && item.dueDate < today) return 'late'
+  if (item.deadlineDate && item.deadlineDate <= addDays(today, 7)) return 'deadline-risk'
+  return 'normal'
+}
+
+function calendarRiskText(item: LifeItem) {
+  const today = currentDate()
+
+  if (item.status === 'done') return item.completedDate ? `完成 ${item.completedDate}` : '已完成'
+  if (item.deadlineDate && item.dueDate && item.deadlineDate < item.dueDate) return '截止早於應完成'
+  if (item.deadlineDate && item.deadlineDate < today) return '已超過截止'
+  if (item.dueDate && item.dueDate < today && item.deadlineDate && item.deadlineDate >= today) {
+    return `Buffer 中，距截止 ${daysBetween(today, item.deadlineDate)} 天`
+  }
+  if (item.dueDate && item.dueDate < today) return `逾期 ${Math.abs(daysBetween(today, item.dueDate))} 天`
+  if (item.dueDate === today) return '今日應完成'
+  if (item.dueDate && item.dueDate > today) return `距應完成 ${daysBetween(today, item.dueDate)} 天`
+  if (item.deadlineDate) return `距截止 ${daysBetween(today, item.deadlineDate)} 天`
+  return '尚未設定日期'
+}
+
+function getCalendarDetailMeta(item: LifeItem) {
+  const parts = [calendarRiskText(item)]
+
+  if (item.dueDate && item.deadlineDate && item.deadlineDate > item.dueDate) {
+    parts.push(`Buffer ${daysBetween(item.dueDate, item.deadlineDate)} 天`)
+  }
+  if (item.dueDate && item.deadlineDate && item.deadlineDate < item.dueDate) {
+    parts.push('請檢查日期設定')
+  }
+
+  return parts.join(' · ')
+}
+
 function getFeaturedOutcomes(outcomes: LifeItem[]) {
   return [...outcomes].sort(compareOutcomeFocus).slice(0, 5)
 }
@@ -3059,6 +3314,7 @@ function getCalendarRangeEntries(
   items: LifeItem[],
   layerFilters: Record<CalendarLayer, boolean>,
   month: string,
+  statusFilter: CalendarStatusFilter,
 ) {
   const monthStart = month
   const monthEnd = getMonthEnd(month)
@@ -3066,9 +3322,18 @@ function getCalendarRangeEntries(
 
   items.forEach((item) => {
     if (!isCalendarLayer(item.layer) || !layerFilters[item.layer]) return
+    if (!matchesCalendarStatusFilter(item, statusFilter)) return
 
     const range = getCalendarRange(item)
-    if (!range || !rangesOverlap(range.startDate, range.endDate, monthStart, monthEnd)) return
+    if (!range) return
+
+    const displayEndDate =
+      item.deadlineDate && item.deadlineDate > range.endDate ? item.deadlineDate : range.endDate
+    const hasVisibleRange = rangesOverlap(range.startDate, displayEndDate, monthStart, monthEnd)
+    const hasVisibleDeadline = Boolean(
+      item.deadlineDate && item.deadlineDate >= monthStart && item.deadlineDate <= monthEnd,
+    )
+    if (!hasVisibleRange && !hasVisibleDeadline) return
 
     entries.push({
       item,
@@ -3079,6 +3344,21 @@ function getCalendarRangeEntries(
   })
 
   return entries.sort(compareCalendarRangeEntries)
+}
+
+function matchesCalendarStatusFilter(item: LifeItem, filter: CalendarStatusFilter) {
+  if (filter === 'all') return true
+  if (filter === 'overdue') return isOverdue(item)
+  if (filter === 'upcoming') {
+    return (
+      item.status !== 'done' &&
+      Boolean(item.dueDate) &&
+      item.dueDate >= currentDate() &&
+      item.dueDate <= addDays(currentDate(), 7)
+    )
+  }
+
+  return item.status === filter
 }
 
 function getCalendarRange(item: LifeItem) {
@@ -3150,6 +3430,71 @@ function buildCalendarWeekSegments(entries: CalendarRangeEntry[], weeks: Calenda
   })
 
   return segments
+}
+
+function buildCalendarDeadlineSegments(
+  entries: CalendarRangeEntry[],
+  weeks: CalendarWeek[],
+  segments: CalendarBarSegment[],
+) {
+  const deadlineSegments: CalendarDeadlineSegment[] = []
+
+  entries.forEach((entry) => {
+    const { item } = entry
+    if (!item.dueDate || !item.deadlineDate || item.deadlineDate <= item.dueDate) return
+
+    weeks.forEach((week, weekIndex) => {
+      if (!rangesOverlap(item.dueDate, item.deadlineDate, week.startDate, week.endDate)) return
+
+      const matchingSegment = segments.find(
+        (segment) => segment.entry.item.id === item.id && segment.weekIndex === weekIndex,
+      )
+      const fallbackSegment = segments.find((segment) => segment.entry.item.id === item.id)
+      const segmentStart = maxDate(item.dueDate, week.startDate)
+      const segmentEnd = minDate(item.deadlineDate, week.endDate)
+
+      deadlineSegments.push({
+        entry,
+        weekIndex,
+        startColumn: daysBetween(week.startDate, segmentStart) + 1,
+        endColumn: daysBetween(week.startDate, segmentEnd) + 1,
+        lane: matchingSegment?.lane ?? fallbackSegment?.lane ?? 0,
+      })
+    })
+  })
+
+  return deadlineSegments
+}
+
+function buildCalendarDeadlineFlags(
+  entries: CalendarRangeEntry[],
+  weeks: CalendarWeek[],
+  segments: CalendarBarSegment[],
+) {
+  const flags: CalendarDeadlineFlag[] = []
+
+  entries.forEach((entry) => {
+    if (!entry.item.deadlineDate) return
+
+    weeks.forEach((week, weekIndex) => {
+      if (entry.item.deadlineDate < week.startDate || entry.item.deadlineDate > week.endDate) return
+
+      const matchingSegment = segments.find(
+        (segment) => segment.entry.item.id === entry.item.id && segment.weekIndex === weekIndex,
+      )
+
+      flags.push({
+        entry,
+        weekIndex,
+        column: daysBetween(week.startDate, entry.item.deadlineDate) + 1,
+        lane: matchingSegment?.lane ?? 0,
+        tone: getCalendarRiskTone(entry.item),
+        label: `${entry.item.title} 截止日期 ${entry.item.deadlineDate}`,
+      })
+    })
+  })
+
+  return flags
 }
 
 function getMonthDays(month: string): MonthDay[] {

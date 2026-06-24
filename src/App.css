@@ -230,25 +230,30 @@
   font-weight: 800;
 }
 
+.summary-pill strong,
+.summary-pill span {
+  color: currentColor;
+}
+
 .summary-pill.high,
 .severity-pill.high {
-  border-color: #f1b8b4;
-  background: #fff1f0;
-  color: #a0342b;
+  border-color: var(--risk-high-border);
+  background: var(--risk-high-bg);
+  color: var(--risk-high-text);
 }
 
 .summary-pill.medium,
 .severity-pill.medium {
-  border-color: #e7c06b;
-  background: #fff8e6;
-  color: #8a5a00;
+  border-color: var(--risk-medium-border);
+  background: var(--risk-medium-bg);
+  color: var(--risk-medium-text);
 }
 
 .summary-pill.low,
 .severity-pill.low {
-  border-color: var(--border);
-  background: var(--accent-soft);
-  color: var(--accent);
+  border-color: var(--risk-low-border);
+  background: var(--risk-low-bg);
+  color: var(--risk-low-text);
 }
 
 .weekly-metric {
@@ -500,6 +505,12 @@
   gap: 8px;
 }
 
+.calendar-status-filters {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+}
+
 .calendar-filter {
   gap: 7px;
   min-width: 0;
@@ -507,10 +518,27 @@
   color: var(--muted);
 }
 
+.calendar-status-filter {
+  min-width: 0;
+  min-height: 36px;
+  border-color: var(--border);
+  background: var(--field);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  padding: 0 8px;
+}
+
 .calendar-filter.active {
   border-color: var(--accent);
   background: var(--surface);
   color: var(--ink);
+}
+
+.calendar-status-filter.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .calendar-weekdays,
@@ -616,6 +644,26 @@
   color: var(--layer-outcome);
 }
 
+.calendar-bar.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.calendar-bar.risk-buffer {
+  box-shadow: inset 0 -3px 0 var(--risk-medium-border);
+}
+
+.calendar-bar.risk-late,
+.calendar-bar.risk-deadline-risk {
+  box-shadow: inset 0 -3px 0 var(--risk-high-border);
+}
+
+.calendar-bar.selected.risk-buffer,
+.calendar-bar.selected.risk-late,
+.calendar-bar.selected.risk-deadline-risk {
+  box-shadow: 0 0 0 2px var(--accent-soft), inset 0 -3px 0 currentColor;
+}
+
 .calendar-bar.continues-before {
   border-left-style: dashed;
   border-top-left-radius: 2px;
@@ -634,6 +682,160 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.calendar-deadline-buffer {
+  align-self: end;
+  height: 8px;
+  margin: 0 5px 2px;
+  border-top: 2px dashed var(--risk-medium-text);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.calendar-deadline-flag {
+  display: inline-flex;
+  width: 22px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  justify-self: end;
+  align-self: start;
+  border: 1px solid var(--risk-high-border);
+  border-radius: 5px;
+  background: var(--risk-high-bg);
+  color: var(--risk-high-text);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+  margin-top: -2px;
+  pointer-events: none;
+  transform: translateX(50%);
+  z-index: 4;
+}
+
+.calendar-deadline-flag.risk-buffer {
+  border-color: var(--risk-medium-border);
+  background: var(--risk-medium-bg);
+  color: var(--risk-medium-text);
+}
+
+.calendar-deadline-flag.risk-done,
+.calendar-deadline-flag.risk-normal {
+  border-color: var(--risk-low-border);
+  background: var(--risk-low-bg);
+  color: var(--risk-low-text);
+}
+
+.calendar-detail-panel {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 14px;
+}
+
+.calendar-detail-panel.risk-buffer {
+  border-color: var(--risk-medium-border);
+}
+
+.calendar-detail-panel.risk-late,
+.calendar-detail-panel.risk-deadline-risk {
+  border-color: var(--risk-high-border);
+}
+
+.calendar-detail-heading,
+.calendar-detail-title,
+.calendar-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.calendar-detail-heading {
+  justify-content: space-between;
+}
+
+.calendar-detail-title {
+  min-width: 0;
+}
+
+.calendar-detail-title > div {
+  min-width: 0;
+}
+
+.calendar-detail-title h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.calendar-risk-pill {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--risk-low-border);
+  border-radius: 999px;
+  background: var(--risk-low-bg);
+  color: var(--risk-low-text);
+  font-size: 12px;
+  font-weight: 900;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+.calendar-risk-pill.risk-buffer {
+  border-color: var(--risk-medium-border);
+  background: var(--risk-medium-bg);
+  color: var(--risk-medium-text);
+}
+
+.calendar-risk-pill.risk-late,
+.calendar-risk-pill.risk-deadline-risk {
+  border-color: var(--risk-high-border);
+  background: var(--risk-high-bg);
+  color: var(--risk-high-text);
+}
+
+.calendar-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.detail-meta {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--field);
+  padding: 10px;
+}
+
+.detail-meta span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.detail-meta strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.calendar-detail-actions {
+  flex-wrap: wrap;
+}
+
+.calendar-detail-actions button {
+  min-height: 38px;
 }
 
 .calendar-hint {
@@ -1471,6 +1673,14 @@ textarea:focus-visible {
     padding: 6px;
   }
 
+  .calendar-status-filters {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .calendar-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .weekly-summary-grid,
   .weekly-metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1604,6 +1814,34 @@ textarea:focus-visible {
     padding: 0 8px;
   }
 
+  .calendar-status-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .calendar-status-filter {
+    min-height: 34px;
+    padding: 0 6px;
+  }
+
+  .calendar-detail-heading,
+  .calendar-detail-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .calendar-detail-actions button {
+    width: 100%;
+  }
+
+  .calendar-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .calendar-risk-pill {
+    width: 100%;
+    white-space: normal;
+  }
+
   .parent-status-toggle button {
     padding: 0 6px;
     font-size: 12px;
@@ -1641,6 +1879,12 @@ textarea:focus-visible {
     height: 22px;
     font-size: 10px;
     padding: 0 6px;
+  }
+
+  .calendar-deadline-flag {
+    width: 18px;
+    height: 16px;
+    font-size: 9px;
   }
 
   .bottom-nav button {
