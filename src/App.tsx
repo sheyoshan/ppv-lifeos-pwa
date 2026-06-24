@@ -13,6 +13,7 @@ type LayerId =
 
 type Status = 'not-started' | 'active' | 'done'
 type TabId = 'home' | 'map' | 'actions' | 'data'
+type PanelMode = 'relationship' | 'edit' | 'create'
 
 type LifeItem = {
   id: string
@@ -41,6 +42,17 @@ type LegacyItem = Partial<LifeItem> & {
   parentId?: string | null
   createdAt?: string
   updatedAt?: string
+}
+
+type AncestorNode = {
+  id: string
+  title: string
+  layer: LayerId | null
+  status: Status | null
+  meta: string
+  parents: AncestorNode[]
+  missing?: boolean
+  cycle?: boolean
 }
 
 const STORAGE_KEY = 'ppv-lifeos-data-v1'
@@ -124,6 +136,8 @@ function App() {
   const [items, setItems] = useState<LifeItem[]>(() => loadItems())
   const [activeTab, setActiveTab] = useState<TabId>('home')
   const [activeLayer, setActiveLayer] = useState<LayerId>('principle')
+  const [selectedItemId, setSelectedItemId] = useState('')
+  const [panelMode, setPanelMode] = useState<PanelMode>('create')
   const [draft, setDraft] = useState<Draft>(() => emptyDraft('principle'))
   const [editingId, setEditingId] = useState<string | null>(null)
   const [notice, setNotice] = useState('資料只保存在這台裝置的瀏覽器中。')
@@ -139,6 +153,7 @@ function App() {
   const pendingActions = actionItems.filter((item) => item.status !== 'done')
   const activeProjects = items.filter((item) => item.layer === 'project' && item.status !== 'done')
   const unlinkedItems = items.filter((item) => getLayer(item.layer).parent && item.parentIds.length === 0)
+  const selectedItem = items.find((item) => item.id === selectedItemId) ?? null
 
   function saveDraft(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -152,9 +167,10 @@ function App() {
     const today = currentDate()
 
     if (editingId) {
+      const savedId = editingId
       setItems((current) =>
         current.map((item) =>
-          item.id === editingId
+          item.id === savedId
             ? {
                 ...item,
                 ...draft,
@@ -168,6 +184,8 @@ function App() {
             : item,
         ),
       )
+      setSelectedItemId(savedId)
+      setPanelMode('relationship')
       setNotice('已更新物件。')
     } else {
       const nextItem: LifeItem = {
@@ -182,6 +200,8 @@ function App() {
       }
       setItems((current) => [nextItem, ...current])
       setActiveLayer(nextItem.layer)
+      setSelectedItemId(nextItem.id)
+      setPanelMode('relationship')
       setNotice(`已建立${layerMeta.label}。`)
     }
 
@@ -189,7 +209,26 @@ function App() {
     setDraft(emptyDraft(draft.layer))
   }
 
+  function selectForRelationship(item: LifeItem) {
+    setSelectedItemId(item.id)
+    setEditingId(null)
+    setDraft(emptyDraft(item.layer))
+    setActiveLayer(item.layer)
+    setPanelMode('relationship')
+    setNotice(`正在查看源頭關係：${item.title}`)
+  }
+
+  function startCreate(layer: LayerId = activeLayer) {
+    setEditingId(null)
+    setDraft(emptyDraft(layer))
+    setActiveLayer(layer)
+    setPanelMode('create')
+    setActiveTab('map')
+    setNotice(`新增${getLayer(layer).label}`)
+  }
+
   function startEdit(item: LifeItem) {
+    setSelectedItemId(item.id)
     setEditingId(item.id)
     setDraft({
       layer: item.layer,
@@ -206,6 +245,7 @@ function App() {
     })
     setActiveLayer(item.layer)
     setActiveTab('map')
+    setPanelMode('edit')
     setNotice(`正在編輯：${item.title}`)
   }
 
@@ -222,8 +262,10 @@ function App() {
     }
 
     setItems((current) => current.filter((candidate) => candidate.id !== editingId))
+    setSelectedItemId('')
     setEditingId(null)
     setDraft(emptyDraft(item.layer))
+    setPanelMode('create')
     setNotice(`已刪除${getLayer(item.layer).label}。`)
   }
 
@@ -337,9 +379,7 @@ function App() {
                     type="button"
                     key={layer.id}
                     onClick={() => {
-                      setActiveLayer(layer.id)
-                      setDraft(emptyDraft(layer.id))
-                      setEditingId(null)
+                      startCreate(layer.id)
                       setActiveTab('map')
                     }}
                   >
@@ -372,8 +412,10 @@ function App() {
                     key={layer.id}
                     onClick={() => {
                       setActiveLayer(layer.id)
-                      setDraft(emptyDraft(layer.id))
+                      setSelectedItemId('')
                       setEditingId(null)
+                      setDraft(emptyDraft(layer.id))
+                      setPanelMode('create')
                     }}
                   >
                     {layer.short}
@@ -383,10 +425,10 @@ function App() {
               <div className="item-list">
                 {activeLayerItems.map((item) => (
                   <button
-                    className={item.id === editingId ? 'item-card selected' : 'item-card'}
+                    className={item.id === selectedItemId ? 'item-card selected' : 'item-card'}
                     type="button"
                     key={item.id}
-                    onClick={() => startEdit(item)}
+                    onClick={() => selectForRelationship(item)}
                   >
                     <strong>{item.title}</strong>
                     <span>{statusLabels[item.status]}</span>
@@ -398,25 +440,39 @@ function App() {
             </div>
 
             <div className="section-block">
-              <div className="section-heading">
-                <div>
-                  <p className="eyebrow">{editingId ? '編輯物件' : '新增物件'}</p>
-                  <h2>{getLayer(draft.layer).label}</h2>
-                </div>
-              </div>
-              <ItemForm
-                draft={draft}
-                items={items}
-                editingId={editingId}
-                onCancel={() => {
-                  setEditingId(null)
-                  setDraft(emptyDraft(draft.layer))
-                  setNotice('已取消編輯。')
-                }}
-                onDelete={deleteEditingItem}
-                onDraftChange={setDraft}
-                onSubmit={saveDraft}
-              />
+              {panelMode === 'relationship' && selectedItem ? (
+                <RelationshipPanel
+                  item={selectedItem}
+                  items={items}
+                  onCreate={() => startCreate(activeLayer)}
+                  onEdit={() => startEdit(selectedItem)}
+                />
+              ) : panelMode === 'relationship' ? (
+                <RelationshipEmptyState onCreate={() => startCreate(activeLayer)} />
+              ) : (
+                <>
+                  <div className="section-heading">
+                    <div>
+                      <p className="eyebrow">{panelMode === 'edit' ? '編輯物件' : '新增物件'}</p>
+                      <h2>{getLayer(draft.layer).label}</h2>
+                    </div>
+                  </div>
+                  <ItemForm
+                    draft={draft}
+                    items={items}
+                    editingId={editingId}
+                    onCancel={() => {
+                      setEditingId(null)
+                      setDraft(emptyDraft(draft.layer))
+                      setPanelMode(selectedItem ? 'relationship' : 'create')
+                      setNotice('已取消編輯。')
+                    }}
+                    onDelete={deleteEditingItem}
+                    onDraftChange={setDraft}
+                    onSubmit={saveDraft}
+                  />
+                </>
+              )}
             </div>
           </section>
         )}
@@ -431,10 +487,7 @@ function App() {
               <button
                 type="button"
                 onClick={() => {
-                  setDraft(emptyDraft('action'))
-                  setEditingId(null)
-                  setActiveTab('map')
-                  setActiveLayer('action')
+                  startCreate('action')
                 }}
               >
                 新增行動
@@ -657,6 +710,103 @@ function ItemForm({
   )
 }
 
+function RelationshipPanel({
+  item,
+  items,
+  onCreate,
+  onEdit,
+}: {
+  item: LifeItem
+  items: LifeItem[]
+  onCreate: () => void
+  onEdit: () => void
+}) {
+  const tree = buildAncestorTree(item, items, new Set([item.id]))
+
+  return (
+    <article className="relationship-panel">
+      <div className="relationship-hero">
+        <span className="node-badge current">{getLayer(item.layer).short}</span>
+        <div>
+          <p className="eyebrow">源頭關係</p>
+          <h2>{item.title}</h2>
+          <p className="muted">{itemMeta(item)}</p>
+        </div>
+      </div>
+
+      <div className="relationship-actions">
+        <button type="button" onClick={onEdit}>
+          編輯
+        </button>
+        <button className="ghost-button" type="button" onClick={onCreate}>
+          新增物件
+        </button>
+      </div>
+
+      <div className="relationship-tree" aria-label="往上追溯父級關係">
+        <div className="tree-current">
+          <span className="node-badge current">{getLayer(item.layer).short}</span>
+          <div>
+            <strong>{item.title}</strong>
+            <small>目前物件</small>
+          </div>
+        </div>
+
+        {tree.parents.length > 0 ? (
+          <div className="ancestor-list">
+            <p className="tree-label">往上父級</p>
+            {tree.parents.map((parent) => (
+              <AncestorBranch depth={0} key={parent.id} node={parent} />
+            ))}
+          </div>
+        ) : (
+          <EmptyState label="此物件目前沒有上層連結" />
+        )}
+      </div>
+    </article>
+  )
+}
+
+function RelationshipEmptyState({ onCreate }: { onCreate: () => void }) {
+  return (
+    <div className="relationship-empty">
+      <EmptyState label="請從左側選擇一個物件，或建立新的架構物件。" />
+      <button type="button" onClick={onCreate}>
+        新增物件
+      </button>
+    </div>
+  )
+}
+
+function AncestorBranch({ node, depth }: { node: AncestorNode; depth: number }) {
+  return (
+    <div className="ancestor-branch" style={{ marginLeft: depth * 14 }}>
+      <div
+        className={[
+          'tree-node',
+          node.missing ? 'missing' : '',
+          node.cycle ? 'cycle' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+      >
+        <span className="node-badge">{node.layer ? getLayer(node.layer).short : '?'}</span>
+        <div>
+          <strong>{node.title}</strong>
+          <small>{node.meta}</small>
+        </div>
+      </div>
+      {node.parents.length > 0 && (
+        <div className="ancestor-parents">
+          {node.parents.map((parent) => (
+            <AncestorBranch depth={depth + 1} key={parent.id} node={parent} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Metric({ label, value }: { label: string; value: number }) {
   return (
     <div className="metric-card">
@@ -750,6 +900,54 @@ function connectionSummary(item: LifeItem, items: LifeItem[]) {
   const parentCount = item.parentIds.length
   const childCount = items.filter((candidate) => candidate.parentIds.includes(item.id)).length
   return `${parentCount} 個上層連結 / ${childCount} 個下層連結`
+}
+
+function buildAncestorTree(
+  item: LifeItem,
+  items: LifeItem[],
+  visitedIds: Set<string> = new Set(),
+): AncestorNode {
+  return {
+    id: item.id,
+    title: item.title,
+    layer: item.layer,
+    status: item.status,
+    meta: itemMeta(item),
+    parents: item.parentIds.map((parentId) => {
+      if (visitedIds.has(parentId)) {
+        return {
+          id: `cycle-${parentId}`,
+          title: '循環連結',
+          layer: null,
+          status: null,
+          meta: '偵測到循環父層，已停止追溯。',
+          parents: [],
+          cycle: true,
+        }
+      }
+
+      const parent = items.find((candidate) => candidate.id === parentId)
+      if (!parent) {
+        return {
+          id: `missing-${parentId}`,
+          title: '遺失的連結',
+          layer: null,
+          status: null,
+          meta: `找不到父層 ID：${parentId}`,
+          parents: [],
+          missing: true,
+        }
+      }
+
+      return buildAncestorTree(parent, items, new Set([...visitedIds, parentId]))
+    }),
+  }
+}
+
+function itemMeta(item: LifeItem) {
+  return [getLayer(item.layer).label, statusLabels[item.status], dateSummary(item) || `建立 ${item.createdDate}`]
+    .filter(Boolean)
+    .join(' · ')
 }
 
 function dateSummary(item: LifeItem) {

@@ -204,6 +204,108 @@
   gap: 12px;
 }
 
+.relationship-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.relationship-hero,
+.tree-current,
+.tree-node {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.relationship-hero {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.relationship-hero h2 {
+  margin: 2px 0 4px;
+}
+
+.relationship-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.relationship-tree {
+  display: grid;
+  gap: 12px;
+}
+
+.tree-current,
+.tree-node {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--field);
+  padding: 11px;
+}
+
+.tree-current {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.tree-current strong,
+.tree-node strong {
+  display: block;
+  color: var(--ink);
+  line-height: 1.25;
+}
+
+.tree-current small,
+.tree-node small,
+.tree-label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tree-label {
+  margin: 0 0 8px;
+  font-weight: 800;
+}
+
+.ancestor-list,
+.ancestor-parents,
+.relationship-empty {
+  display: grid;
+  gap: 10px;
+}
+
+.ancestor-branch {
+  display: grid;
+  gap: 8px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+}
+
+.tree-node.missing,
+.tree-node.cycle {
+  border-color: #e7c06b;
+  background: #fff8e6;
+}
+
+.node-badge {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 900;
+}
+
+.node-badge.current {
+  background: var(--accent);
+  color: white;
+}
+
 .parent-picker {
   display: grid;
   gap: 10px;
