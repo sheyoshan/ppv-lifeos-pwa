@@ -109,6 +109,23 @@ type MapPreference = {
   controlsCollapsed: boolean
 }
 
+type EncyclopediaArticle = {
+  id: string
+  eyebrow: string
+  title: string
+  concept: string[]
+  why: string[]
+  practice: string[]
+  mistakes: string[]
+  examples: string[]
+}
+
+type EncyclopediaSection = {
+  id: string
+  label: string
+  articles: EncyclopediaArticle[]
+}
+
 const STORAGE_KEY = 'ppv-lifeos-data-v1'
 const MAP_PREFERENCES_KEY = 'ppv-lifeos-map-preferences-v1'
 
@@ -216,6 +233,498 @@ const dateFieldLabels: Array<{ key: keyof Pick<
   { key: 'completedDate', label: '完成日期' },
 ]
 
+const encyclopediaSections: EncyclopediaSection[] = [
+  {
+    id: 'foundation',
+    label: '系統基礎',
+    articles: [
+      {
+        id: 'overview',
+        eyebrow: '系統總覽',
+        title: 'PPV Life OS 是什麼',
+        concept: [
+          'PPV Life OS 是一套原則驅動的人生管理系統。它把人生拆成七個層次：原則、支柱、目的、目標、結果、專案、行動。',
+          '它不是單純把事情排得更滿，而是讓每個行動都能回到「我相信什麼、我重視什麼、我正在創造什麼成果」。',
+        ],
+        why: [
+          '只管理任務，容易變成忙碌清單；只談價值，容易停在空泛想像。PPV 的價值在於把價值和行動接起來。',
+          '當生活壓力變大時，這套系統能幫你判斷哪些事情應該前進、暫停、放棄或重新定義。',
+        ],
+        practice: [
+          '先建立少數真正不可違背的原則，再建立人生支柱。每個支柱寫出目的，接著才設定目標、結果、專案與行動。',
+          '每天看行動，每週看專案與結果，每月看目標與支柱，每季回到原則與目的。',
+        ],
+        mistakes: [
+          '把 PPV 當成更複雜的待辦清單。',
+          '一次建立太多物件，卻沒有形成可以執行的下一步。',
+          '只有上層理念，沒有可觀察的結果和專案。',
+        ],
+        examples: [
+          '如果你的原則是「家庭不可被長期犧牲」，那事業專案就要能被檢查：它是否正在吞掉不可替代的家庭時間？',
+          '如果結果是「完成家庭財務儀表板」，專案可以是「整理現金流」，行動可以是「匯出上個月信用卡明細」。',
+        ],
+      },
+      {
+        id: 'system-flow',
+        eyebrow: '運作邏輯',
+        title: '由上而下對齊，由下而上校準',
+        concept: [
+          '由上而下，是用原則決定方向，用支柱維持平衡，用目的確認意義。',
+          '由下而上，是用行動、專案與結果檢查現實：你每天做的事，是否真的支撐你說重要的事。',
+        ],
+        why: [
+          '人生系統最大的風險不是沒有努力，而是努力和方向脫節。',
+          '上層如果不落地，會變成口號；下層如果不回看上層，會變成盲目執行。',
+        ],
+        practice: [
+          '建立新行動時，盡量連到專案；建立新專案時，問它要創造哪個結果。',
+          '每週找出三種斷裂：沒有上層的行動、沒有結果的專案、沒有專案推進的結果。',
+        ],
+        mistakes: [
+          '把未連結物件視為錯誤。未連結有時代表想法還在發酵，只是要定期整理。',
+          '把每個物件硬連到不自然的父層，造成系統看似完整但判斷失真。',
+        ],
+        examples: [
+          '一個臨時行動可以先不連結，但週回顧時要判斷：它應該成為某個專案的一部分，還是只是雜務？',
+          '一個專案如果找不到結果，通常代表它只是活動，不是成果創造。',
+        ],
+      },
+      {
+        id: 'gtd-relationship',
+        eyebrow: 'GTD',
+        title: 'GTD 與 PPV 的關係',
+        concept: [
+          'GTD 強調捕捉、釐清、組織、回顧與執行，幫你把腦中的開放迴圈變成可信任的外部系統。',
+          'PPV 接在更高一層：它不只問事情如何被處理，也問這件事為什麼值得被處理。',
+        ],
+        why: [
+          '沒有 GTD，PPV 可能太抽象；沒有 PPV，GTD 可能只會讓你更有效率地完成不重要的事。',
+          '兩者結合後，收件匣中的雜訊會被整理成行動、專案或被明確放棄。',
+        ],
+        practice: [
+          'Capture：先把想到的事情放進暫存清單。Clarify：判斷它是行動、專案、結果，還是只是參考資料。',
+          'Organize：放入 PPV 層級並連結父層。Review：檢查連結是否合理。Engage：選擇今天真正要做的行動。',
+        ],
+        mistakes: [
+          '把每個捕捉到的想法都立刻做成專案。',
+          '只整理任務，不問它是否服務目的或支柱。',
+          '用 GTD 清空焦慮，卻沒有用 PPV 決定取捨。',
+        ],
+        examples: [
+          '收件匣寫著「研究保險」。釐清後可能是專案「家庭保障盤點」，結果是「完成保單缺口表」，目的則是「保護家庭承重能力」。',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'layers',
+    label: '七大層次',
+    articles: [
+      {
+        id: 'principle-guide',
+        eyebrow: '原則 Principles',
+        title: '原則：不可違背的判斷標準',
+        concept: [
+          '原則是最高判斷標準，用來回答：什麼事情即使有短期好處，也不能長期違背。',
+          '好的原則不是漂亮句子，而是在衝突時能幫你做取捨的標準。',
+        ],
+        why: [
+          '沒有原則，目標容易被外界標準牽著走；有原則，取捨才不只靠情緒和壓力。',
+        ],
+        practice: [
+          '用「我不會為了 X 犧牲 Y」或「當 A 和 B 衝突時，我優先保護 C」來寫。',
+          '原則數量要少，先保留 3 到 7 條，能真正用來決策即可。',
+        ],
+        mistakes: [
+          '把願望寫成原則，例如「我要成功」。這比較像目標，不是判斷標準。',
+          '原則太多，導致每一條都沒有約束力。',
+        ],
+        examples: [
+          '「不以長期健康交換短期績效。」',
+          '「家庭關係不能成為事業成長的燃料。」',
+        ],
+      },
+      {
+        id: 'pillar-guide',
+        eyebrow: '支柱 Pillars',
+        title: '支柱：人生的承重領域',
+        concept: [
+          '支柱是人生長期需要維持承重的領域，例如健康、家庭、事業、財務、學習、信仰、孩子教育。',
+          '支柱不是專案分類，而是人生平衡的結構。',
+        ],
+        why: [
+          '單一領域的成功，如果以其他支柱崩塌為代價，通常不是可持續的成功。',
+          '支柱讓你在追求目標時看見整體，不被某一個領域的壓力完全吞沒。',
+        ],
+        practice: [
+          '先列出目前最需要承重的 5 到 8 個領域，再問每個領域是否真的需要長期維護。',
+          '每月檢查支柱是否失衡：哪一個長期沒有專案或結果？哪一個吸走過多行動？',
+        ],
+        mistakes: [
+          '把支柱切得太細，例如把每個工作任務都當成支柱。',
+          '只放正在燃燒的領域，忽略安靜但重要的領域。',
+        ],
+        examples: [
+          '「健康」是支柱；「減重 5 公斤」不是支柱，而可能是目標或結果。',
+          '「孩子教育」是支柱；「完成暑假閱讀計畫」比較像專案。',
+        ],
+      },
+      {
+        id: 'purpose-guide',
+        eyebrow: '目的 Purposes',
+        title: '目的：每個支柱為什麼重要',
+        concept: [
+          '目的說明某個支柱為什麼值得被照顧。它把支柱從外在標籤轉成內在理由。',
+          '目的不是 KPI，而是意義判準。',
+        ],
+        why: [
+          '沒有目的，支柱容易變成社會期待。你可能在追求財務、事業或學習，卻忘了它們服務什麼生活。',
+        ],
+        practice: [
+          '對每個支柱問三次「為什麼」。例如：為什麼財務重要？為了安全感。為什麼安全感重要？為了在家庭需要時有選擇權。',
+          '把目的寫成能提醒自己的句子，而不是外界聽起來厲害的說法。',
+        ],
+        mistakes: [
+          '把目的寫成數字，例如「存到 300 萬」。這比較像目標或結果。',
+          '寫成別人的期待，例如「看起來有成就」。',
+        ],
+        examples: [
+          '支柱「財務」的目的：建立選擇自由，讓家庭在變動時仍有安全邊界。',
+          '支柱「健康」的目的：保有陪伴家人與長期創造的身體能力。',
+        ],
+      },
+      {
+        id: 'goal-guide',
+        eyebrow: '目標 Goals',
+        title: '目標：長期前進方向',
+        concept: [
+          '目標是在某個目的下想前進的方向。它比結果更長期，比目的更具體。',
+          '好的目標會描述方向與狀態，不必每次都直接等於可交付物。',
+        ],
+        why: [
+          '目標讓目的有推進方向，也讓結果不會變成零散成果。',
+        ],
+        practice: [
+          '用 3 到 12 個月的尺度描述目標，並讓它能產生多個結果。',
+          '建立目標後，至少定義一個可觀察結果，否則很難知道是否真的前進。',
+        ],
+        mistakes: [
+          '把單一步驟寫成目標，例如「打電話給會計師」。這是行動。',
+          '目標太抽象，例如「變得更好」，導致無法拆結果。',
+        ],
+        examples: [
+          '目的：建立選擇自由。目標：建立 12 個月家庭緊急預備金。',
+          '目的：保有長期健康。目標：建立可持續的睡眠與運動節奏。',
+        ],
+      },
+      {
+        id: 'outcome-guide',
+        eyebrow: '結果 Outcomes',
+        title: '結果：可觀察的交付成果',
+        concept: [
+          '結果用來判斷目標是否真的有進展。它應該是可以被看見、被交付、被驗收的狀態。',
+          '結果不是努力程度，而是努力留下的證據。',
+        ],
+        why: [
+          '沒有結果，目標容易只停留在意圖。結果讓你知道專案是否真的有產出。',
+          '首頁聚焦進行中的結果，就是為了提醒目前真正要交付的是什麼。',
+        ],
+        practice: [
+          '寫結果時使用「完成、建立、交付、取得、達成」這類可驗收動詞。',
+          '每個目標至少放 1 到 3 個結果，並設定預計或截止日期。',
+        ],
+        mistakes: [
+          '把活動寫成結果，例如「持續研究」。研究本身不是結果，研究報告或決策表才是。',
+          '結果太多，導致焦點分散。',
+        ],
+        examples: [
+          '「完成家庭月現金流儀表板」是結果；「整理財務」太模糊。',
+          '「孩子完成 20 篇閱讀心得」是結果；「培養閱讀習慣」比較像目標。',
+        ],
+      },
+      {
+        id: 'project-guide',
+        eyebrow: '專案 Projects',
+        title: '專案：創造結果的一組工作',
+        concept: [
+          '專案是為了創造某個結果而需要完成的一組工作。它通常需要多個行動，不是一口氣能完成。',
+          '專案的完成條件應該指向結果，而不是指向忙碌。',
+        ],
+        why: [
+          '專案把結果拆成可以管理的工作範圍，避免結果太大而無法行動。',
+        ],
+        practice: [
+          '建立專案時先寫清楚完成條件，再列出下一步行動。',
+          '一個專案最好能在數天到數週內推進；若長期停滯，可能需要拆小。',
+        ],
+        mistakes: [
+          '專案沒有下一步行動。',
+          '專案名稱像主題資料夾，例如「健康」，而不是一組可完成工作。',
+        ],
+        examples: [
+          '結果：完成家庭財務儀表板。專案：整理收入與固定支出資料。',
+          '結果：完成年度健檢追蹤表。專案：蒐集檢查報告並預約回診。',
+        ],
+      },
+      {
+        id: 'action-guide',
+        eyebrow: '行動 Actions',
+        title: '行動：今天或本週可以執行的下一步',
+        concept: [
+          '行動是最底層，也是系統真正發生的地方。它必須具體到今天或本週可以開始。',
+          '好的行動會描述一個明確動作，而不是模糊意圖。',
+        ],
+        why: [
+          '再好的原則、目標和專案，如果沒有下一步，就不會進入現實。',
+          '行動讓你在忙亂時不必重新思考整個人生，只要執行已經對齊過的下一步。',
+        ],
+        practice: [
+          '用動詞開頭，例如「打電話」、「整理」、「寄出」、「預約」、「閱讀第 1 章」。',
+          '如果一個行動超過 30 到 60 分鐘仍無法開始，通常要再拆小。',
+        ],
+        mistakes: [
+          '把願望寫成行動，例如「改善健康」。',
+          '行動沒有連到專案，久了會讓每日清單和人生方向脫節。',
+        ],
+        examples: [
+          '「預約牙醫檢查」比「處理健康」更像行動。',
+          '「整理 2026-06 信用卡明細」比「做財務規劃」更可執行。',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'practice',
+    label: '規劃與對齊',
+    articles: [
+      {
+        id: 'planning-seven-layers',
+        eyebrow: '規劃流程',
+        title: '如何規劃七大層次',
+        concept: [
+          '規劃七層不是一次寫完人生藍圖，而是建立一條能從價值走到行動的鏈路。',
+          '你可以從上往下建立，也可以從目前手上的混亂行動往上反推。',
+        ],
+        why: [
+          '完整鏈路讓你知道：今天做的事，不只是待辦事項，而是某個結果、目標、目的與原則的延伸。',
+        ],
+        practice: [
+          'Top-down：原則 -> 支柱 -> 目的 -> 目標 -> 結果 -> 專案 -> 行動。',
+          'Bottom-up：拿一個正在做的行動，問它屬於哪個專案；專案創造哪個結果；結果服務哪個目標。',
+          '每次只完成一條鏈路即可，不需要一次填滿所有人生領域。',
+        ],
+        mistakes: [
+          '從工具欄位開始填空，而不是從真實問題開始。',
+          '為了完整而建立假物件，導致系統變重。',
+        ],
+        examples: [
+          '支柱：健康。目的：保有長期陪伴與創造能力。目標：建立穩定睡眠。結果：連續 30 天 23:30 前上床。專案：設計晚間關機流程。行動：今晚 22:45 把手機放到客廳。',
+        ],
+      },
+      {
+        id: 'alignment-guide',
+        eyebrow: 'Alignment',
+        title: '如何保持連結與對齊',
+        concept: [
+          'Alignment 是檢查每個物件是否合理連到上層意義與下層現實。',
+          '父層代表來源與理由；子層代表落地方式與推進證據。',
+        ],
+        why: [
+          '沒有對齊，系統會分裂成兩半：上層很漂亮，下層很忙。',
+          '對齊不是要求每件事都有完美父層，而是讓你知道哪些事情已對齊、哪些事情仍待釐清。',
+        ],
+        practice: [
+          '允許複數父層：一個專案可能同時服務家庭與財務。',
+          '允許未連結：臨時任務、探索想法、尚未歸類的承諾可以先放著，但要在週回顧整理。',
+          '每週檢查三種清單：未連結物件、沒有子層的高層物件、沒有進展的結果。',
+        ],
+        mistakes: [
+          '硬把所有物件連起來，造成錯誤的安全感。',
+          '永遠不整理未連結物件，讓系統變成雜物箱。',
+        ],
+        examples: [
+          '「替孩子整理學習資料」可能同時連到家庭與孩子教育兩個支柱。',
+          '「研究新工具」若找不到服務的結果，可能只是好奇，不一定需要成為專案。',
+        ],
+      },
+      {
+        id: 'dates-status-rhythm',
+        eyebrow: '日期與狀態',
+        title: '日期、狀態與月曆節奏',
+        concept: [
+          '日期不是壓迫自己的工具，而是幫你看見時間承諾。狀態則用來表示物件目前的位置。',
+          '月曆橫條用開始日期到截止日期顯示行動、專案與結果的時間跨度。',
+        ],
+        why: [
+          '沒有日期，承諾容易漂浮；日期太多，系統會變成壓力來源。重點是讓時間和成果保持可見。',
+        ],
+        practice: [
+          '建立日期與修改日期由系統幫你留下脈絡。開始日期代表何時開始投入。截止日期代表最晚要交付或完成。',
+          '預計日期可用於不一定有硬期限、但希望被安排的事項。完成日期用來留下實際結束時間。',
+          '未開始表示還不該投入；進行中表示正在推進；完成表示已達到完成條件。',
+        ],
+        mistakes: [
+          '把所有日期都填滿，卻不知道每個日期的用途。',
+          '完成狀態只是心理上想結束，但結果或專案其實沒有達到完成條件。',
+        ],
+        examples: [
+          '專案 6/1 開始、6/14 截止，月曆會顯示兩週跨度，提醒它不是單日任務。',
+          '只有截止日期的行動會顯示成單日，代表它只有一個清楚時間點。',
+        ],
+      },
+      {
+        id: 'review-cadence',
+        eyebrow: '回顧節奏',
+        title: '每日、每週、每月、每季怎麼用',
+        concept: [
+          'PPV 的節奏不是每天重寫人生，而是在不同時間尺度看不同層次。',
+          '越底層越常看，越高層越少看，但高層決定底層方向。',
+        ],
+        why: [
+          '如果每天都在檢查原則，會太重；如果一年才看一次行動，現實早就偏航。',
+        ],
+        practice: [
+          '每日：看首頁進行中的結果與行動清單，選出今天最重要的下一步。',
+          '每週：檢查專案與結果，更新狀態、日期與父層連結。',
+          '每月：檢查目標是否有可觀察結果，支柱是否失衡。',
+          '每季：回到目的與原則，判斷方向是否仍然值得。',
+        ],
+        mistakes: [
+          '每日回顧做得像年度規劃，導致太耗能。',
+          '只做行動清單，不做週回顧，最後行動會慢慢和結果斷線。',
+        ],
+        examples: [
+          '週回顧時問：本週完成了哪些行動？它們推進了哪些專案？專案有沒有創造結果？',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'templates',
+    label: '範例與模板',
+    articles: [
+      {
+        id: 'health-example',
+        eyebrow: '完整範例',
+        title: '從「我想變健康」拆成七層鏈路',
+        concept: [
+          '「我想變健康」太大，不能直接執行。PPV 會把它拆成價值、方向、成果和下一步。',
+        ],
+        why: [
+          '健康類目標很容易變成短期衝刺。七層鏈路能讓健康回到長期生活能力，而不是只看體重或外表。',
+        ],
+        practice: [
+          '原則：不以長期健康交換短期績效。',
+          '支柱：健康。目的：保有陪伴家人與長期工作的身體能力。',
+          '目標：建立穩定睡眠與基本體能。結果：連續 30 天 23:30 前上床，並完成 12 次 Zone 2 運動。',
+          '專案：設計晚間關機流程、建立每週運動排程。行動：今晚 22:45 關閉工作通知。',
+        ],
+        mistakes: [
+          '直接建立「每天運動」行動，但沒有處理睡眠、時間與家庭節奏。',
+          '只用體重當結果，忽略真正想保護的生活能力。',
+        ],
+        examples: [
+          '如果連續失敗，不是責怪自己，而是回到專案層：晚間流程是否設計得太不符合現實？',
+        ],
+      },
+      {
+        id: 'finance-example',
+        eyebrow: '完整範例',
+        title: '從「財務自由」拆成可執行系統',
+        concept: [
+          '「財務自由」常常太抽象。PPV 會先問它服務什麼目的，再把它轉成可交付成果。',
+        ],
+        why: [
+          '財務目標如果沒有目的，容易變成無止境比較；有目的後，金錢會回到安全、選擇權與家庭承重。',
+        ],
+        practice: [
+          '原則：不讓家庭暴露在可預防的財務脆弱中。',
+          '支柱：財務。目的：建立選擇自由與家庭安全邊界。',
+          '目標：建立 12 個月緊急預備金。結果：完成家庭現金流表、每月自動投入 20%、保留 6 個月現金。',
+          '專案：整理帳戶與固定支出、設定自動轉帳。行動：匯出近三個月銀行明細。',
+        ],
+        mistakes: [
+          '直接追求投資報酬率，卻沒有先處理現金流與風險。',
+          '把「研究投資」當成成果，實際上沒有任何可驗收交付物。',
+        ],
+        examples: [
+          '結果可以是「完成家庭資產負債表」，專案是「收集帳戶資料」，行動是「列出所有金融帳戶」。',
+        ],
+      },
+      {
+        id: 'setup-template',
+        eyebrow: '30 分鐘建立法',
+        title: '從零建立 PPV Life OS',
+        concept: [
+          '第一次建立系統時，不要追求完整。目標是建立一條能用的鏈路，讓系統開始幫你思考。',
+        ],
+        why: [
+          '太完整的第一次設定會讓人卡住。能運作的最小版本，比完美架構更重要。',
+        ],
+        practice: [
+          '5 分鐘：寫下 3 條原則。5 分鐘：列出 5 個支柱。5 分鐘：替最重要支柱寫目的。',
+          '10 分鐘：建立 1 個目標、1 個結果、1 個專案。5 分鐘：寫出 3 個下一步行動。',
+        ],
+        mistakes: [
+          '一開始就替所有人生領域建滿物件。',
+          '花太多時間命名，卻沒有產生今天能做的行動。',
+        ],
+        examples: [
+          '最小可用版本可以只有一條鏈：原則 -> 健康 -> 保有長期體能 -> 建立睡眠節奏 -> 30 天早睡 -> 晚間流程 -> 今晚 22:45 關通知。',
+        ],
+      },
+      {
+        id: 'weekly-review-template',
+        eyebrow: '週回顧',
+        title: '週回顧 Checklist',
+        concept: [
+          '週回顧是 PPV 的維修時間。它不是反省大會，而是把系統重新校準到現實。',
+        ],
+        why: [
+          '日常執行會產生偏差。週回顧讓你把完成、延遲、放棄和新承諾整理回系統。',
+        ],
+        practice: [
+          '清空捕捉清單：每個項目決定刪除、行動、專案或結果。',
+          '檢查進行中結果：是否仍重要？是否有專案推進？日期是否合理？',
+          '檢查行動：完成的標記完成，卡住的拆小，無意義的刪除。',
+          '檢查未連結物件：決定連結父層、保留探索或移除。',
+        ],
+        mistakes: [
+          '週回顧只整理清單順序，不檢查對齊。',
+          '把所有延期都自動延到下週，沒有重新判斷是否仍值得做。',
+        ],
+        examples: [
+          '固定問題：本週最重要的結果是什麼？哪個專案沒有下一步？哪個行動其實不再重要？',
+        ],
+      },
+      {
+        id: 'naming-template',
+        eyebrow: '命名規則',
+        title: '物件命名範例與反例',
+        concept: [
+          '命名不是美化，而是讓未來的你一眼知道這個物件在系統中的角色。',
+        ],
+        why: [
+          '模糊名稱會讓週回顧變慢，也會讓你無法判斷物件是否完成。',
+        ],
+        practice: [
+          '原則用判斷句。支柱用領域名。目的用意義句。目標用方向句。結果用交付句。專案用工作範圍。行動用動詞下一步。',
+        ],
+        mistakes: [
+          '所有層級都用同一種名稱，例如全部寫成「健康」。',
+          '行動不用動詞，結果沒有完成標準。',
+        ],
+        examples: [
+          '反例：健康。較好：支柱「健康」、目的「保有長期陪伴能力」、結果「完成 30 天睡眠紀錄」。',
+          '反例：做財務。較好：行動「匯出 2026-06 信用卡明細」。',
+        ],
+      },
+    ],
+  },
+]
+
+const firstEncyclopediaArticleId = encyclopediaSections[0].articles[0].id
+
 function App() {
   const [items, setItems] = useState<LifeItem[]>(() => loadItems())
   const [mapPreferencesByLayer, setMapPreferencesByLayer] = useState<Record<LayerId, MapPreference>>(
@@ -231,6 +740,7 @@ function App() {
   const [calendarLayerFilters, setCalendarLayerFilters] = useState<Record<CalendarLayer, boolean>>(
     () => ({ ...defaultCalendarLayerFilters }),
   )
+  const [activeEncyclopediaId, setActiveEncyclopediaId] = useState(firstEncyclopediaArticleId)
   const [notice, setNotice] = useState('資料只保存在這台裝置的瀏覽器中。')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -705,6 +1215,11 @@ function App() {
               />
             </div>
 
+            <PpvEncyclopedia
+              activeArticleId={activeEncyclopediaId}
+              onArticleChange={setActiveEncyclopediaId}
+            />
+
             <div className="section-block">
               <div className="section-heading">
                 <h2>資料狀態</h2>
@@ -920,6 +1435,87 @@ function OutcomeFocusList({
           </button>
         </div>
       )}
+    </section>
+  )
+}
+
+function PpvEncyclopedia({
+  activeArticleId,
+  onArticleChange,
+}: {
+  activeArticleId: string
+  onArticleChange: (articleId: string) => void
+}) {
+  const activeArticle = findEncyclopediaArticle(activeArticleId)
+
+  return (
+    <section className="section-block encyclopedia">
+      <div className="section-heading encyclopedia-heading">
+        <div>
+          <p className="eyebrow">PPV Life OS 百科全書</p>
+          <h2>從理論到實作</h2>
+        </div>
+        <span className="count-pill">
+          {encyclopediaSections.reduce((total, section) => total + section.articles.length, 0)} 篇
+        </span>
+      </div>
+
+      <div className="encyclopedia-layout">
+        <nav className="encyclopedia-tabs" aria-label="百科全書章節">
+          {encyclopediaSections.map((section) => (
+            <div className="encyclopedia-tab-group" key={section.id}>
+              <p>{section.label}</p>
+              <div>
+                {section.articles.map((article) => (
+                  <button
+                    className={article.id === activeArticle.id ? 'active' : ''}
+                    type="button"
+                    key={article.id}
+                    onClick={() => onArticleChange(article.id)}
+                  >
+                    {article.title}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </nav>
+
+        <article className="encyclopedia-article">
+          <p className="eyebrow">{activeArticle.eyebrow}</p>
+          <h3>{activeArticle.title}</h3>
+          <EncyclopediaArticlePart title="核心概念" items={activeArticle.concept} />
+          <EncyclopediaArticlePart title="為什麼重要" items={activeArticle.why} />
+          <EncyclopediaArticlePart title="如何實作" items={activeArticle.practice} ordered />
+          <EncyclopediaArticlePart title="常見錯誤" items={activeArticle.mistakes} />
+          <EncyclopediaArticlePart title="實作提示或範例" items={activeArticle.examples} accent />
+        </article>
+      </div>
+    </section>
+  )
+}
+
+function EncyclopediaArticlePart({
+  accent = false,
+  items,
+  ordered = false,
+  title,
+}: {
+  accent?: boolean
+  items: string[]
+  ordered?: boolean
+  title: string
+}) {
+  const ListTag = ordered ? 'ol' : 'ul'
+
+  return (
+    <section className={accent ? 'encyclopedia-part example' : 'encyclopedia-part'}>
+      <h4>{title}</h4>
+      <ListTag>
+        {items.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ListTag>
     </section>
   )
 }
@@ -1308,6 +1904,13 @@ function NavButton({ label, active, onClick }: { label: string; active: boolean;
 
 function EmptyState({ label }: { label: string }) {
   return <div className="empty-state">{label}</div>
+}
+
+function findEncyclopediaArticle(articleId: string) {
+  return (
+    encyclopediaSections.flatMap((section) => section.articles).find((article) => article.id === articleId) ??
+    encyclopediaSections[0].articles[0]
+  )
 }
 
 function loadItems(): LifeItem[] {
