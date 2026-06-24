@@ -122,6 +122,58 @@
   font-size: 13px;
 }
 
+.outcome-list,
+.outcome-empty {
+  display: grid;
+  gap: 10px;
+}
+
+.outcome-card {
+  display: grid;
+  width: 100%;
+  gap: 10px;
+  min-height: 128px;
+  justify-content: stretch;
+  padding: 14px;
+  text-align: left;
+}
+
+.outcome-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.outcome-card-head strong {
+  display: block;
+  color: var(--ink);
+  line-height: 1.25;
+}
+
+.outcome-card-head small,
+.outcome-card p,
+.outcome-meta {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.outcome-card p {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.outcome-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
+.outcome-empty button {
+  justify-self: start;
+}
+
 .layer-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));

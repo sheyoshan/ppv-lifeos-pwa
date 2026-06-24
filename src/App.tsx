@@ -204,6 +204,8 @@ function App() {
   const actionItems = items.filter((item) => item.layer === 'action')
   const pendingActions = actionItems.filter((item) => item.status !== 'done')
   const activeProjects = items.filter((item) => item.layer === 'project' && item.status !== 'done')
+  const activeOutcomes = items.filter((item) => item.layer === 'outcome' && item.status === 'active')
+  const featuredOutcomes = getFeaturedOutcomes(activeOutcomes)
   const unlinkedItems = items.filter((item) => getLayer(item.layer).parent && item.parentIds.length === 0)
   const selectedItem = items.find((item) => item.id === selectedItemId) ?? null
 
@@ -319,6 +321,16 @@ function App() {
     setActiveTab('map')
     setPanelMode('edit')
     setNotice(`正在編輯：${item.title}`)
+  }
+
+  function openOutcomeRelationship(item: LifeItem) {
+    setSelectedItemId(item.id)
+    setEditingId(null)
+    setDraft(emptyDraft('outcome'))
+    setActiveLayer('outcome')
+    setActiveTab('map')
+    setPanelMode('relationship')
+    setNotice(`正在查看結果：${item.title}`)
   }
 
   function deleteEditingItem() {
@@ -437,31 +449,13 @@ function App() {
               <Metric label="未連結物件" value={unlinkedItems.length} />
             </div>
 
-            <section className="section-block">
-              <div className="section-heading">
-                <h2>七層架構</h2>
-                <button type="button" onClick={() => setActiveTab('map')}>
-                  管理
-                </button>
-              </div>
-              <div className="layer-grid">
-                {layers.map((layer) => (
-                  <button
-                    className="layer-tile"
-                    type="button"
-                    key={layer.id}
-                    onClick={() => {
-                      startCreate(layer.id)
-                      setActiveTab('map')
-                    }}
-                  >
-                    <span>{layer.short}</span>
-                    <strong>{layer.label}</strong>
-                    <small>{items.filter((item) => item.layer === layer.id).length}</small>
-                  </button>
-                ))}
-              </div>
-            </section>
+            <OutcomeFocusList
+              items={items}
+              outcomes={featuredOutcomes}
+              totalCount={activeOutcomes.length}
+              onCreate={() => startCreate('outcome')}
+              onOpen={openOutcomeRelationship}
+            />
           </section>
         )}
 
@@ -791,6 +785,62 @@ function ItemForm({
         )}
       </div>
     </form>
+  )
+}
+
+function OutcomeFocusList({
+  items,
+  outcomes,
+  totalCount,
+  onCreate,
+  onOpen,
+}: {
+  items: LifeItem[]
+  outcomes: LifeItem[]
+  totalCount: number
+  onCreate: () => void
+  onOpen: (item: LifeItem) => void
+}) {
+  return (
+    <section className="section-block">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">成果交付</p>
+          <h2>進行中的結果</h2>
+        </div>
+        <span className="count-pill">
+          {outcomes.length} / {totalCount}
+        </span>
+      </div>
+
+      {outcomes.length > 0 ? (
+        <div className="outcome-list">
+          {outcomes.map((item) => (
+            <button className="outcome-card" type="button" key={item.id} onClick={() => onOpen(item)}>
+              <div className="outcome-card-head">
+                <span className="node-badge">{getLayer(item.layer).short}</span>
+                <div>
+                  <strong>{item.title}</strong>
+                  <small>{statusLabels[item.status]}</small>
+                </div>
+              </div>
+              <p>{item.note || '尚未加入說明。'}</p>
+              <div className="outcome-meta">
+                <span>{dateSummary(item) || '未排日期'}</span>
+                <span>{connectionSummary(item, items)}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="outcome-empty">
+          <EmptyState label="目前沒有進行中的結果" />
+          <button type="button" onClick={onCreate}>
+            新增結果
+          </button>
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -1198,6 +1248,28 @@ function getVisibleLayerItems(
       return matchesSearch && matchesStatus && matchesDate && matchesLink
     })
     .sort((left, right) => compareItems(left, right, preference))
+}
+
+function getFeaturedOutcomes(outcomes: LifeItem[]) {
+  return [...outcomes].sort(compareOutcomeFocus).slice(0, 5)
+}
+
+function compareOutcomeFocus(left: LifeItem, right: LifeItem) {
+  const leftDate = getOutcomePriorityDate(left)
+  const rightDate = getOutcomePriorityDate(right)
+
+  if (!leftDate && !rightDate) {
+    return right.updatedDate.localeCompare(left.updatedDate) || left.title.localeCompare(right.title, 'zh-Hant')
+  }
+  if (!leftDate) return 1
+  if (!rightDate) return -1
+
+  const compared = leftDate.localeCompare(rightDate)
+  return compared === 0 ? left.title.localeCompare(right.title, 'zh-Hant') : compared
+}
+
+function getOutcomePriorityDate(item: LifeItem) {
+  return item.dueDate || item.scheduledDate
 }
 
 function matchesDateFilter(item: LifeItem, filter: DateFilter) {
