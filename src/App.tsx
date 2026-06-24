@@ -77,6 +77,16 @@ type MonthDay = {
   isToday: boolean
 }
 
+type ProjectManagementProject = {
+  project: LifeItem
+  actions: LifeItem[]
+}
+
+type ProjectManagementOutcome = {
+  outcome: LifeItem
+  projects: ProjectManagementProject[]
+}
+
 type LifeData = {
   version: 3
   exportedAt?: string
@@ -845,9 +855,14 @@ function App() {
     setNotice(`正在查看源頭關係：${item.title}`)
   }
 
-  function startCreate(layer: LayerId = activeLayer) {
+  function startCreate(layer: LayerId = activeLayer, parentIds: string[] = []) {
+    const nextDraft = emptyDraft(layer)
+
     setEditingId(null)
-    setDraft(emptyDraft(layer))
+    setDraft({
+      ...nextDraft,
+      parentIds: getLayer(layer).parent ? parentIds : [],
+    })
     setActiveLayer(layer)
     setPanelMode('create')
     setActiveTab('map')
@@ -1167,6 +1182,14 @@ function App() {
               ))}
               {actionItems.length === 0 && <EmptyState label="尚未建立行動" />}
             </div>
+
+            <ProjectManagementPanel
+              items={items}
+              onCreateAction={(project) => startCreate('action', [project.id])}
+              onEditAction={startEdit}
+              onOpenItem={openItemRelationship}
+              onToggleActionDone={(item) => updateStatus(item, item.status === 'done' ? 'active' : 'done')}
+            />
           </section>
         )}
 
@@ -1482,6 +1505,219 @@ function OutcomeFocusList({
         </div>
       )}
     </section>
+  )
+}
+
+function ProjectManagementPanel({
+  items,
+  onCreateAction,
+  onEditAction,
+  onOpenItem,
+  onToggleActionDone,
+}: {
+  items: LifeItem[]
+  onCreateAction: (project: LifeItem) => void
+  onEditAction: (item: LifeItem) => void
+  onOpenItem: (item: LifeItem) => void
+  onToggleActionDone: (item: LifeItem) => void
+}) {
+  const [collapsedOutcomeIds, setCollapsedOutcomeIds] = useState<string[]>([])
+  const [collapsedProjectIds, setCollapsedProjectIds] = useState<string[]>([])
+  const [showAllActionProjectIds, setShowAllActionProjectIds] = useState<string[]>([])
+  const branches = getProjectManagementBranches(items)
+  const projectCount = branches.reduce((total, branch) => total + branch.projects.length, 0)
+  const activeActionCount = branches.reduce(
+    (total, branch) =>
+      total +
+      branch.projects.reduce(
+        (projectTotal, projectNode) =>
+          projectTotal + projectNode.actions.filter((item) => item.status === 'active').length,
+        0,
+      ),
+    0,
+  )
+
+  function toggleOutcome(outcomeId: string) {
+    setCollapsedOutcomeIds((current) => toggleListValue(current, outcomeId))
+  }
+
+  function toggleProject(projectId: string) {
+    setCollapsedProjectIds((current) => toggleListValue(current, projectId))
+  }
+
+  function toggleActionStatusView(projectId: string) {
+    setShowAllActionProjectIds((current) => toggleListValue(current, projectId))
+  }
+
+  return (
+    <section className="section-block project-management">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">專案管理</p>
+          <h2>結果到行動</h2>
+        </div>
+        <span className="count-pill">
+          {branches.length} 結果 / {projectCount} 專案 / {activeActionCount} 行動
+        </span>
+      </div>
+
+      {branches.length > 0 ? (
+        <div className="pm-tree">
+          {branches.map((branch) => {
+            const outcomeOpen = !collapsedOutcomeIds.includes(branch.outcome.id)
+
+            return (
+              <article className="pm-outcome-group" key={branch.outcome.id}>
+                <button
+                  className="pm-outcome-banner"
+                  type="button"
+                  aria-expanded={outcomeOpen}
+                  onClick={() => toggleOutcome(branch.outcome.id)}
+                >
+                  <span className="pm-disclosure" aria-hidden="true">
+                    {outcomeOpen ? '-' : '+'}
+                  </span>
+                  <div className="pm-banner-main">
+                    <span className="node-badge layer-outcome">{getLayer(branch.outcome.layer).short}</span>
+                    <div>
+                      <strong>{branch.outcome.title}</strong>
+                      <small>{branch.outcome.note || connectionSummary(branch.outcome, items)}</small>
+                    </div>
+                  </div>
+                  <DateCountdown item={branch.outcome} />
+                </button>
+
+                {outcomeOpen && (
+                  <div className="pm-project-list">
+                    {branch.projects.length > 0 ? (
+                      branch.projects.map((projectNode) => {
+                        const projectOpen = !collapsedProjectIds.includes(projectNode.project.id)
+                        const showAllActions = showAllActionProjectIds.includes(projectNode.project.id)
+                        const visibleActions = showAllActions
+                          ? projectNode.actions
+                          : projectNode.actions.filter((item) => item.status === 'active')
+
+                        return (
+                          <article className="pm-project-group" key={projectNode.project.id}>
+                            <div className="pm-project-banner">
+                              <button
+                                className="pm-project-toggle"
+                                type="button"
+                                aria-expanded={projectOpen}
+                                onClick={() => toggleProject(projectNode.project.id)}
+                              >
+                                <span className="pm-disclosure" aria-hidden="true">
+                                  {projectOpen ? '-' : '+'}
+                                </span>
+                                <div className="pm-banner-main">
+                                  <span className="node-badge layer-project">
+                                    {getLayer(projectNode.project.layer).short}
+                                  </span>
+                                  <div>
+                                    <strong>{projectNode.project.title}</strong>
+                                    <small>
+                                      {projectNode.project.note ||
+                                        `${projectNode.actions.length} 個行動連結`}
+                                    </small>
+                                  </div>
+                                </div>
+                                <DateCountdown item={projectNode.project} />
+                              </button>
+                              <div className="pm-project-controls">
+                                <button
+                                  className="ghost-button"
+                                  type="button"
+                                  onClick={() => onCreateAction(projectNode.project)}
+                                >
+                                  新增行動
+                                </button>
+                                {projectNode.actions.length > 0 && (
+                                  <button
+                                    className="ghost-button"
+                                    type="button"
+                                    onClick={() => toggleActionStatusView(projectNode.project.id)}
+                                  >
+                                    {showAllActions ? '只看進行中' : '顯示全部行動'}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {projectOpen && (
+                              <div className="pm-action-list">
+                                {visibleActions.length > 0 ? (
+                                  visibleActions.map((action) => (
+                                    <article className={`pm-action-row status-${action.status}`} key={action.id}>
+                                      <button
+                                        className={action.status === 'done' ? 'check done' : 'check'}
+                                        type="button"
+                                        onClick={() => onToggleActionDone(action)}
+                                        aria-label={`切換完成：${action.title}`}
+                                      >
+                                        ✓
+                                      </button>
+                                      <button
+                                        className="pm-action-content"
+                                        type="button"
+                                        onClick={() => onOpenItem(action)}
+                                      >
+                                        <strong>{action.title}</strong>
+                                        <span>{action.note || connectionSummary(action, items)}</span>
+                                        <small>
+                                          {statusLabels[action.status]} · {formatDueDateLabel(action)} ·{' '}
+                                          {dueCountdownText(action)}
+                                        </small>
+                                      </button>
+                                      <button
+                                        className="ghost-button"
+                                        type="button"
+                                        onClick={() => onEditAction(action)}
+                                      >
+                                        編輯
+                                      </button>
+                                    </article>
+                                  ))
+                                ) : (
+                                  <div className="pm-action-empty">
+                                    <EmptyState
+                                      label={
+                                        projectNode.actions.length === 0
+                                          ? '這個專案尚未建立行動'
+                                          : '目前沒有進行中的行動'
+                                      }
+                                    />
+                                    <button type="button" onClick={() => onCreateAction(projectNode.project)}>
+                                      新增行動
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </article>
+                        )
+                      })
+                    ) : (
+                      <EmptyState label="這個結果目前沒有進行中的專案" />
+                    )}
+                  </div>
+                )}
+              </article>
+            )
+          })}
+        </div>
+      ) : (
+        <EmptyState label="目前沒有進行中的結果可管理" />
+      )}
+    </section>
+  )
+}
+
+function DateCountdown({ item }: { item: LifeItem }) {
+  return (
+    <div className="pm-date-summary">
+      <span>{formatDueDateLabel(item)}</span>
+      <span className={`pm-countdown ${dueCountdownTone(item)}`}>{dueCountdownText(item)}</span>
+    </div>
   )
 }
 
@@ -2175,6 +2411,63 @@ function compareParentOptions(left: LifeItem, right: LifeItem, selectedIds: Set<
 
   const updatedCompared = right.updatedDate.localeCompare(left.updatedDate)
   return updatedCompared === 0 ? left.title.localeCompare(right.title, 'zh-Hant') : updatedCompared
+}
+
+function getProjectManagementBranches(items: LifeItem[]): ProjectManagementOutcome[] {
+  const outcomes = items
+    .filter((item) => item.layer === 'outcome' && item.status === 'active')
+    .sort(compareWorkItems)
+  const projects = items
+    .filter((item) => item.layer === 'project' && item.status === 'active')
+    .sort(compareWorkItems)
+  const actions = items.filter((item) => item.layer === 'action').sort(compareWorkItems)
+
+  return outcomes.map((outcome) => ({
+    outcome,
+    projects: projects
+      .filter((project) => project.parentIds.includes(outcome.id))
+      .map((project) => ({
+        project,
+        actions: actions.filter((action) => action.parentIds.includes(project.id)),
+      })),
+  }))
+}
+
+function compareWorkItems(left: LifeItem, right: LifeItem) {
+  if (!left.dueDate && !right.dueDate) {
+    return right.updatedDate.localeCompare(left.updatedDate) || left.title.localeCompare(right.title, 'zh-Hant')
+  }
+  if (!left.dueDate) return 1
+  if (!right.dueDate) return -1
+
+  const compared = left.dueDate.localeCompare(right.dueDate)
+  return compared === 0 ? left.title.localeCompare(right.title, 'zh-Hant') : compared
+}
+
+function toggleListValue(values: string[], value: string) {
+  return values.includes(value) ? values.filter((current) => current !== value) : [...values, value]
+}
+
+function formatDueDateLabel(item: LifeItem) {
+  return item.dueDate ? `應完成 ${item.dueDate}` : '未設定應完成日'
+}
+
+function dueCountdownText(item: LifeItem) {
+  if (item.status === 'done') return item.completedDate ? `完成 ${item.completedDate}` : '已完成'
+  if (!item.dueDate) return '未設定'
+
+  const days = daysBetween(currentDate(), item.dueDate)
+  if (days < 0) return `逾期 ${Math.abs(days)} 天`
+  if (days === 0) return '今日應完成'
+  return `剩 ${days} 天`
+}
+
+function dueCountdownTone(item: LifeItem) {
+  if (item.status === 'done') return 'done'
+  if (!item.dueDate) return 'empty'
+  if (item.dueDate < currentDate()) return 'late'
+  if (item.dueDate === currentDate()) return 'today'
+  return 'upcoming'
 }
 
 function getFeaturedOutcomes(outcomes: LifeItem[]) {

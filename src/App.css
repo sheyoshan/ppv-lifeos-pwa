@@ -920,6 +920,193 @@ textarea {
   margin-top: 4px;
 }
 
+.project-management,
+.pm-tree,
+.pm-outcome-group,
+.pm-project-list,
+.pm-project-group,
+.pm-action-list,
+.pm-action-empty {
+  display: grid;
+  gap: 10px;
+}
+
+.pm-outcome-banner,
+.pm-project-toggle,
+.pm-action-row {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.pm-outcome-banner,
+.pm-project-toggle {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 68px;
+  justify-content: stretch;
+  padding: 11px;
+  box-shadow: none;
+  text-align: left;
+}
+
+.pm-outcome-banner {
+  border-color: var(--layer-outcome);
+  background: var(--layer-outcome-soft);
+}
+
+.pm-project-list,
+.pm-action-list {
+  margin-left: 14px;
+  padding-left: 14px;
+  border-left: 2px solid var(--border);
+}
+
+.pm-project-banner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.pm-project-toggle {
+  border-color: var(--layer-project);
+  background: var(--field);
+}
+
+.pm-project-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.pm-disclosure {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.pm-banner-main {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.pm-banner-main div {
+  min-width: 0;
+}
+
+.pm-banner-main strong,
+.pm-action-content strong {
+  display: block;
+  overflow: hidden;
+  color: var(--ink);
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pm-banner-main small,
+.pm-action-content span,
+.pm-action-content small,
+.pm-date-summary {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.pm-banner-main small,
+.pm-action-content span {
+  display: block;
+  overflow: hidden;
+  margin-top: 3px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pm-date-summary {
+  display: grid;
+  min-width: 138px;
+  justify-items: end;
+  gap: 5px;
+}
+
+.pm-countdown {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0 9px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 900;
+}
+
+.pm-countdown.late {
+  background: #fff1f0;
+  color: #a0342b;
+}
+
+.pm-countdown.today {
+  background: #fff4d8;
+  color: #8a5a00;
+}
+
+.pm-countdown.done {
+  background: rgba(74, 130, 97, 0.16);
+  color: var(--success);
+}
+
+.pm-countdown.empty {
+  background: var(--wash);
+  color: var(--muted);
+}
+
+.pm-action-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+}
+
+.pm-action-row.status-done {
+  opacity: 0.72;
+}
+
+.pm-action-content {
+  display: grid;
+  min-height: 0;
+  width: 100%;
+  justify-content: stretch;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  text-align: left;
+}
+
+.pm-action-content small {
+  display: block;
+  margin-top: 4px;
+}
+
+.pm-action-empty {
+  justify-items: start;
+}
+
 .check {
   width: 42px;
   height: 42px;
@@ -1114,9 +1301,34 @@ textarea:focus-visible {
     grid-template-columns: 42px 1fr;
   }
 
-  .action-row .ghost-button {
+  .action-row .ghost-button,
+  .pm-action-row .ghost-button {
     grid-column: 2;
     justify-self: start;
+  }
+
+  .pm-outcome-banner,
+  .pm-project-toggle {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+
+  .pm-outcome-banner .pm-date-summary,
+  .pm-project-toggle .pm-date-summary {
+    grid-column: 2;
+    justify-items: start;
+  }
+
+  .pm-project-banner,
+  .pm-action-row {
+    grid-template-columns: 1fr;
+  }
+
+  .pm-project-controls {
+    justify-content: flex-start;
+  }
+
+  .pm-action-row {
+    grid-template-columns: 42px 1fr;
   }
 }
 
@@ -1169,6 +1381,20 @@ textarea:focus-visible {
   .parent-status-toggle button {
     padding: 0 6px;
     font-size: 12px;
+  }
+
+  .pm-project-list,
+  .pm-action-list {
+    margin-left: 6px;
+    padding-left: 10px;
+  }
+
+  .pm-date-summary {
+    min-width: 0;
+  }
+
+  .pm-project-controls button {
+    width: 100%;
   }
 
   .calendar-day-cell {
