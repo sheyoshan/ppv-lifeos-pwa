@@ -28,6 +28,10 @@ type SortField =
   | 'title'
 type SortDirection = 'asc' | 'desc'
 type CalendarLayer = Extract<LayerId, 'outcome' | 'project' | 'action'>
+type TimelineLayer = Extract<LayerId, 'purpose' | 'goal' | 'outcome' | 'project' | 'action'>
+type RoadmapLayer = Extract<LayerId, 'goal' | 'outcome' | 'project'>
+type HorizonLayer = Extract<LayerId, 'purpose' | 'goal'>
+type CalendarViewMode = 'month' | 'quarter' | 'horizon'
 type CalendarStatusFilter = 'all' | Status | 'overdue' | 'upcoming'
 type CalendarRiskTone = 'normal' | 'buffer' | 'late' | 'deadline-risk' | 'done'
 
@@ -50,7 +54,7 @@ type Draft = Omit<LifeItem, 'id'>
 
 type CalendarRangeEntry = {
   item: LifeItem
-  layer: CalendarLayer
+  layer: TimelineLayer
   startDate: string
   endDate: string
 }
@@ -87,6 +91,24 @@ type CalendarDeadlineFlag = {
   lane: number
   tone: CalendarRiskTone
   label: string
+}
+
+type TimelineColumn = {
+  id: string
+  label: string
+  sublabel: string
+  startDate: string
+  endDate: string
+  isCurrent: boolean
+}
+
+type TimelineSegment = {
+  entry: CalendarRangeEntry
+  startColumn: number
+  endColumn: number
+  lane: number
+  continuesBefore: boolean
+  continuesAfter: boolean
 }
 
 type MonthDay = {
@@ -265,6 +287,10 @@ const layers: Array<{
 ]
 
 const calendarLayerIds: CalendarLayer[] = ['action', 'project', 'outcome']
+const roadmapLayerIds: RoadmapLayer[] = ['goal', 'outcome', 'project']
+const horizonLayerIds: HorizonLayer[] = ['purpose', 'goal']
+const timelineLayerIds: TimelineLayer[] = ['purpose', 'goal', 'outcome', 'project', 'action']
+const calendarViewModeIds: CalendarViewMode[] = ['month', 'quarter', 'horizon']
 const calendarStatusFilterIds: CalendarStatusFilter[] = [
   'all',
   'not-started',
@@ -288,6 +314,24 @@ const calendarStatusFilterLabels: Record<CalendarStatusFilter, string> = {
   done: '完成',
   overdue: '逾期',
   upcoming: '7天內',
+}
+
+const calendarViewModeLabels: Record<CalendarViewMode, { label: string; eyebrow: string; description: string }> = {
+  month: {
+    label: '月視圖',
+    eyebrow: '執行時間表',
+    description: '行動、專案、結果的本月執行與交付壓力。',
+  },
+  quarter: {
+    label: '季度路線圖',
+    eyebrow: '目標推進',
+    description: '從本週開始的滾動 13 週，用來檢查目標、結果、專案是否形成推進路線。',
+  },
+  horizon: {
+    label: '長期視圖',
+    eyebrow: '目的方向',
+    description: '36 個月跨度，用來檢查目的、目標與支柱方向是否持續對齊。',
+  },
 }
 
 const severityLabels: Record<AlignmentSeverity, string> = {
@@ -332,6 +376,17 @@ const defaultCalendarLayerFilters: Record<CalendarLayer, boolean> = {
   action: true,
   project: true,
   outcome: true,
+}
+
+const defaultRoadmapLayerFilters: Record<RoadmapLayer, boolean> = {
+  goal: true,
+  outcome: true,
+  project: true,
+}
+
+const defaultHorizonLayerFilters: Record<HorizonLayer, boolean> = {
+  purpose: true,
+  goal: true,
 }
 
 const dateFieldLabels: Array<{ key: keyof Pick<
@@ -848,11 +903,22 @@ function App() {
   const [panelMode, setPanelMode] = useState<PanelMode>('create')
   const [draft, setDraft] = useState<Draft>(() => emptyDraft('principle'))
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [calendarViewMode, setCalendarViewMode] = useState<CalendarViewMode>('month')
   const [calendarMonth, setCalendarMonth] = useState(() => getMonthKey(currentDate()))
   const [calendarLayerFilters, setCalendarLayerFilters] = useState<Record<CalendarLayer, boolean>>(
     () => ({ ...defaultCalendarLayerFilters }),
   )
   const [calendarStatusFilter, setCalendarStatusFilter] = useState<CalendarStatusFilter>('all')
+  const [roadmapStartDate, setRoadmapStartDate] = useState(() => getWeekRange(currentDate()).startDate)
+  const [roadmapLayerFilters, setRoadmapLayerFilters] = useState<Record<RoadmapLayer, boolean>>(
+    () => ({ ...defaultRoadmapLayerFilters }),
+  )
+  const [roadmapStatusFilter, setRoadmapStatusFilter] = useState<CalendarStatusFilter>('all')
+  const [horizonStartMonth, setHorizonStartMonth] = useState(() => getYearStartMonth(currentDate()))
+  const [horizonLayerFilters, setHorizonLayerFilters] = useState<Record<HorizonLayer, boolean>>(
+    () => ({ ...defaultHorizonLayerFilters }),
+  )
+  const [horizonStatusFilter, setHorizonStatusFilter] = useState<CalendarStatusFilter>('all')
   const [selectedCalendarItemId, setSelectedCalendarItemId] = useState('')
   const [activeEncyclopediaId, setActiveEncyclopediaId] = useState(firstEncyclopediaArticleId)
   const [notice, setNotice] = useState('資料只保存在這台裝置的瀏覽器中。')
@@ -883,8 +949,44 @@ function App() {
     calendarMonth,
     calendarStatusFilter,
   )
+  const roadmapRange = getRollingRange(roadmapStartDate, 13 * 7 - 1)
+  const roadmapEntries = getTimelineRangeEntries(
+    items,
+    roadmapLayerFilters,
+    roadmapLayerIds,
+    roadmapRange.startDate,
+    roadmapRange.endDate,
+    roadmapStatusFilter,
+  )
+  const roadmapUnscheduledItems = getUnscheduledTimelineItems(
+    items,
+    roadmapLayerFilters,
+    roadmapLayerIds,
+    roadmapStatusFilter,
+  )
+  const horizonRange = getHorizonRange(horizonStartMonth)
+  const horizonEntries = getTimelineRangeEntries(
+    items,
+    horizonLayerFilters,
+    horizonLayerIds,
+    horizonRange.startDate,
+    horizonRange.endDate,
+    horizonStatusFilter,
+  )
+  const horizonUnscheduledItems = getUnscheduledTimelineItems(
+    items,
+    horizonLayerFilters,
+    horizonLayerIds,
+    horizonStatusFilter,
+  )
+  const activeCalendarEntries =
+    calendarViewMode === 'month'
+      ? calendarEntries
+      : calendarViewMode === 'quarter'
+        ? roadmapEntries
+        : horizonEntries
   const selectedCalendarEntry =
-    calendarEntries.find((entry) => entry.item.id === selectedCalendarItemId) ?? null
+    activeCalendarEntries.find((entry) => entry.item.id === selectedCalendarItemId) ?? null
 
   function updateActiveMapPreference(patch: Partial<MapPreference>) {
     setMapPreferencesByLayer((current) => ({
@@ -1015,6 +1117,11 @@ function App() {
     setNotice(`正在查看${getLayer(item.layer).label}：${item.title}`)
   }
 
+  function changeCalendarViewMode(mode: CalendarViewMode) {
+    setCalendarViewMode(mode)
+    setSelectedCalendarItemId('')
+  }
+
   function showPreviousCalendarMonth() {
     setCalendarMonth((current) => shiftMonth(current, -1))
   }
@@ -1028,8 +1135,46 @@ function App() {
     setCalendarMonth(getMonthKey(today))
   }
 
+  function showPreviousRoadmapRange() {
+    setRoadmapStartDate((current) => addDays(current, -13 * 7))
+  }
+
+  function showNextRoadmapRange() {
+    setRoadmapStartDate((current) => addDays(current, 13 * 7))
+  }
+
+  function showCurrentRoadmapRange() {
+    setRoadmapStartDate(getWeekRange(currentDate()).startDate)
+  }
+
+  function showPreviousHorizonRange() {
+    setHorizonStartMonth((current) => shiftMonth(current, -12))
+  }
+
+  function showNextHorizonRange() {
+    setHorizonStartMonth((current) => shiftMonth(current, 12))
+  }
+
+  function showCurrentHorizonRange() {
+    setHorizonStartMonth(getYearStartMonth(currentDate()))
+  }
+
   function toggleCalendarLayer(layer: CalendarLayer) {
     setCalendarLayerFilters((current) => ({
+      ...current,
+      [layer]: !current[layer],
+    }))
+  }
+
+  function toggleRoadmapLayer(layer: RoadmapLayer) {
+    setRoadmapLayerFilters((current) => ({
+      ...current,
+      [layer]: !current[layer],
+    }))
+  }
+
+  function toggleHorizonLayer(layer: HorizonLayer) {
+    setHorizonLayerFilters((current) => ({
       ...current,
       [layer]: !current[layer],
     }))
@@ -1320,20 +1465,42 @@ function App() {
           <CalendarView
             allItems={items}
             entries={calendarEntries}
+            horizonEntries={horizonEntries}
+            horizonLayerFilters={horizonLayerFilters}
+            horizonRange={horizonRange}
+            horizonStatusFilter={horizonStatusFilter}
+            horizonUnscheduledItems={horizonUnscheduledItems}
             layerFilters={calendarLayerFilters}
             month={calendarMonth}
+            roadmapEntries={roadmapEntries}
+            roadmapLayerFilters={roadmapLayerFilters}
+            roadmapRange={roadmapRange}
+            roadmapStatusFilter={roadmapStatusFilter}
+            roadmapUnscheduledItems={roadmapUnscheduledItems}
             selectedEntry={selectedCalendarEntry}
             statusFilter={calendarStatusFilter}
+            viewMode={calendarViewMode}
             onCloseDetail={() => setSelectedCalendarItemId('')}
             onEditItem={startEdit}
+            onHorizonLayerToggle={toggleHorizonLayer}
+            onHorizonStatusFilterChange={setHorizonStatusFilter}
             onLayerToggle={toggleCalendarLayer}
             onNextMonth={showNextCalendarMonth}
+            onNextHorizon={showNextHorizonRange}
+            onNextRoadmap={showNextRoadmapRange}
             onOpenItem={openItemRelationship}
             onPreviousMonth={showPreviousCalendarMonth}
+            onPreviousHorizon={showPreviousHorizonRange}
+            onPreviousRoadmap={showPreviousRoadmapRange}
+            onRoadmapLayerToggle={toggleRoadmapLayer}
+            onRoadmapStatusFilterChange={setRoadmapStatusFilter}
             onSelectItem={(item) => setSelectedCalendarItemId(item.id)}
             onStatusFilterChange={setCalendarStatusFilter}
+            onTodayHorizon={showCurrentHorizonRange}
             onToday={showCurrentCalendarMonth}
+            onTodayRoadmap={showCurrentRoadmapRange}
             onToggleActionDone={(item) => updateStatus(item, item.status === 'done' ? 'active' : 'done')}
+            onViewModeChange={changeCalendarViewMode}
           />
         )}
 
@@ -2168,37 +2335,81 @@ function EncyclopediaArticlePart({
 function CalendarView({
   allItems,
   entries,
+  horizonEntries,
+  horizonLayerFilters,
+  horizonRange,
+  horizonStatusFilter,
+  horizonUnscheduledItems,
   layerFilters,
   month,
+  roadmapEntries,
+  roadmapLayerFilters,
+  roadmapRange,
+  roadmapStatusFilter,
+  roadmapUnscheduledItems,
   selectedEntry,
   statusFilter,
+  viewMode,
   onCloseDetail,
   onEditItem,
+  onHorizonLayerToggle,
+  onHorizonStatusFilterChange,
   onLayerToggle,
   onNextMonth,
+  onNextHorizon,
+  onNextRoadmap,
   onOpenItem,
   onPreviousMonth,
+  onPreviousHorizon,
+  onPreviousRoadmap,
+  onRoadmapLayerToggle,
+  onRoadmapStatusFilterChange,
   onSelectItem,
   onStatusFilterChange,
+  onTodayHorizon,
   onToday,
+  onTodayRoadmap,
   onToggleActionDone,
+  onViewModeChange,
 }: {
   allItems: LifeItem[]
   entries: CalendarRangeEntry[]
+  horizonEntries: CalendarRangeEntry[]
+  horizonLayerFilters: Record<HorizonLayer, boolean>
+  horizonRange: WeeklyRange
+  horizonStatusFilter: CalendarStatusFilter
+  horizonUnscheduledItems: LifeItem[]
   layerFilters: Record<CalendarLayer, boolean>
   month: string
+  roadmapEntries: CalendarRangeEntry[]
+  roadmapLayerFilters: Record<RoadmapLayer, boolean>
+  roadmapRange: WeeklyRange
+  roadmapStatusFilter: CalendarStatusFilter
+  roadmapUnscheduledItems: LifeItem[]
   selectedEntry: CalendarRangeEntry | null
   statusFilter: CalendarStatusFilter
+  viewMode: CalendarViewMode
   onCloseDetail: () => void
   onEditItem: (item: LifeItem) => void
+  onHorizonLayerToggle: (layer: HorizonLayer) => void
+  onHorizonStatusFilterChange: (filter: CalendarStatusFilter) => void
   onLayerToggle: (layer: CalendarLayer) => void
   onNextMonth: () => void
+  onNextHorizon: () => void
+  onNextRoadmap: () => void
   onOpenItem: (item: LifeItem) => void
   onPreviousMonth: () => void
+  onPreviousHorizon: () => void
+  onPreviousRoadmap: () => void
+  onRoadmapLayerToggle: (layer: RoadmapLayer) => void
+  onRoadmapStatusFilterChange: (filter: CalendarStatusFilter) => void
   onSelectItem: (item: LifeItem) => void
   onStatusFilterChange: (filter: CalendarStatusFilter) => void
+  onTodayHorizon: () => void
   onToday: () => void
+  onTodayRoadmap: () => void
   onToggleActionDone: (item: LifeItem) => void
+  onViewModeChange: (mode: CalendarViewMode) => void
 }) {
   const weeks = getCalendarWeeks(month)
   const segments = buildCalendarWeekSegments(entries, weeks)
@@ -2218,21 +2429,25 @@ function CalendarView({
   return (
     <section className="screen">
       <div className="section-block calendar-shell">
-        <div className="calendar-toolbar">
-          <button className="calendar-icon-button" type="button" onClick={onPreviousMonth} aria-label="上一個月">
-            ‹
-          </button>
-          <div className="calendar-title">
-            <p className="eyebrow">月行事曆</p>
-            <h2>{formatMonthLabel(month)}</h2>
-          </div>
-          <button className="ghost-button" type="button" onClick={onToday}>
-            今天
-          </button>
-          <button className="calendar-icon-button" type="button" onClick={onNextMonth} aria-label="下一個月">
-            ›
-          </button>
-        </div>
+        <CalendarModeSwitch activeMode={viewMode} onChange={onViewModeChange} />
+
+        {viewMode === 'month' ? (
+          <>
+            <div className="calendar-toolbar">
+              <button className="calendar-icon-button" type="button" onClick={onPreviousMonth} aria-label="上一個月">
+                ‹
+              </button>
+              <div className="calendar-title">
+                <p className="eyebrow">{calendarViewModeLabels.month.eyebrow}</p>
+                <h2>{formatMonthLabel(month)}</h2>
+              </div>
+              <button className="ghost-button" type="button" onClick={onToday}>
+                今天
+              </button>
+              <button className="calendar-icon-button" type="button" onClick={onNextMonth} aria-label="下一個月">
+                ›
+              </button>
+            </div>
 
         <div className="calendar-layer-filters" aria-label="月曆顯示層級">
           {calendarLayerIds.map((layer) => (
@@ -2382,6 +2597,56 @@ function CalendarView({
         ) : (
           <p className="calendar-hint">橫條使用開始日期到應完成日；截止日期作為 buffer 死線資訊。</p>
         )}
+          </>
+        ) : viewMode === 'quarter' ? (
+          <TimelinePanel
+            allItems={allItems}
+            columns={getRollingWeekColumns(roadmapRange.startDate)}
+            description={calendarViewModeLabels.quarter.description}
+            entries={roadmapEntries}
+            emptyLabel="這 13 週沒有符合篩選且具有開始日期或應完成日的目標、結果或專案"
+            eyebrow={calendarViewModeLabels.quarter.eyebrow}
+            layerFilters={roadmapLayerFilters}
+            layerIds={roadmapLayerIds}
+            range={roadmapRange}
+            rangeLabel={`${roadmapRange.startDate} - ${roadmapRange.endDate}`}
+            selectedItemId={selectedEntry?.item.id ?? ''}
+            statusFilter={roadmapStatusFilter}
+            title="滾動 13 週"
+            unscheduledItems={roadmapUnscheduledItems}
+            unscheduledLabel="未排入路線圖"
+            onLayerToggle={onRoadmapLayerToggle}
+            onNext={onNextRoadmap}
+            onPrevious={onPreviousRoadmap}
+            onSelectItem={onSelectItem}
+            onStatusFilterChange={onRoadmapStatusFilterChange}
+            onToday={onTodayRoadmap}
+          />
+        ) : (
+          <TimelinePanel
+            allItems={allItems}
+            columns={getHorizonMonthColumns(horizonRange.startDate)}
+            description={calendarViewModeLabels.horizon.description}
+            entries={horizonEntries}
+            emptyLabel="這 36 個月沒有符合篩選且具有開始日期或應完成日的目的或目標"
+            eyebrow={calendarViewModeLabels.horizon.eyebrow}
+            layerFilters={horizonLayerFilters}
+            layerIds={horizonLayerIds}
+            range={horizonRange}
+            rangeLabel={`${horizonRange.startDate.slice(0, 7)} - ${horizonRange.endDate.slice(0, 7)}`}
+            selectedItemId={selectedEntry?.item.id ?? ''}
+            statusFilter={horizonStatusFilter}
+            title="36 個月"
+            unscheduledItems={horizonUnscheduledItems}
+            unscheduledLabel="長期有效或未排期"
+            onLayerToggle={onHorizonLayerToggle}
+            onNext={onNextHorizon}
+            onPrevious={onPreviousHorizon}
+            onSelectItem={onSelectItem}
+            onStatusFilterChange={onHorizonStatusFilterChange}
+            onToday={onTodayHorizon}
+          />
+        )}
 
         {selectedEntry && (
           <CalendarDetailPanel
@@ -2395,6 +2660,220 @@ function CalendarView({
         )}
       </div>
     </section>
+  )
+}
+
+function CalendarModeSwitch({
+  activeMode,
+  onChange,
+}: {
+  activeMode: CalendarViewMode
+  onChange: (mode: CalendarViewMode) => void
+}) {
+  return (
+    <div className="calendar-mode-switch" aria-label="時間視圖">
+      {calendarViewModeIds.map((mode) => (
+        <button
+          className={activeMode === mode ? 'active' : ''}
+          type="button"
+          key={mode}
+          onClick={() => onChange(mode)}
+          aria-pressed={activeMode === mode}
+        >
+          <span>{calendarViewModeLabels[mode].label}</span>
+          <small>{calendarViewModeLabels[mode].eyebrow}</small>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function TimelinePanel<TLayer extends TimelineLayer>({
+  allItems,
+  columns,
+  description,
+  emptyLabel,
+  entries,
+  eyebrow,
+  layerFilters,
+  layerIds,
+  range,
+  rangeLabel,
+  selectedItemId,
+  statusFilter,
+  title,
+  unscheduledItems,
+  unscheduledLabel,
+  onLayerToggle,
+  onNext,
+  onPrevious,
+  onSelectItem,
+  onStatusFilterChange,
+  onToday,
+}: {
+  allItems: LifeItem[]
+  columns: TimelineColumn[]
+  description: string
+  emptyLabel: string
+  entries: CalendarRangeEntry[]
+  eyebrow: string
+  layerFilters: Record<TLayer, boolean>
+  layerIds: TLayer[]
+  range: WeeklyRange
+  rangeLabel: string
+  selectedItemId: string
+  statusFilter: CalendarStatusFilter
+  title: string
+  unscheduledItems: LifeItem[]
+  unscheduledLabel: string
+  onLayerToggle: (layer: TLayer) => void
+  onNext: () => void
+  onPrevious: () => void
+  onSelectItem: (item: LifeItem) => void
+  onStatusFilterChange: (filter: CalendarStatusFilter) => void
+  onToday: () => void
+}) {
+  const segments = buildTimelineSegments(entries, columns, layerIds)
+  const laneCount = segments.reduce((maximum, segment) => Math.max(maximum, segment.lane + 1), 0)
+  const hasActiveLayer = layerIds.some((layer) => layerFilters[layer])
+  const columnMinWidth = columns.length > 13 ? 54 : 78
+  const timelineStyle = {
+    gridTemplateColumns: `repeat(${columns.length}, minmax(${columnMinWidth}px, 1fr))`,
+  } as CSSProperties
+  const barRowStyle = {
+    ...timelineStyle,
+    '--timeline-bar-height': `${Math.max(laneCount, 1) * 30 + 10}px`,
+  } as CSSProperties
+
+  return (
+    <>
+      <div className="calendar-toolbar">
+        <button className="calendar-icon-button" type="button" onClick={onPrevious} aria-label="上一段時間">
+          ‹
+        </button>
+        <div className="calendar-title">
+          <p className="eyebrow">{eyebrow}</p>
+          <h2>{title}</h2>
+          <p>{rangeLabel}</p>
+        </div>
+        <button className="ghost-button" type="button" onClick={onToday}>
+          今天
+        </button>
+        <button className="calendar-icon-button" type="button" onClick={onNext} aria-label="下一段時間">
+          ›
+        </button>
+      </div>
+
+      <p className="calendar-hint">{description}</p>
+
+      <div className="calendar-layer-filters timeline-layer-filters" aria-label="時間軸顯示層級">
+        {layerIds.map((layer) => (
+          <button
+            className={layerFilters[layer] ? 'calendar-filter active' : 'calendar-filter'}
+            type="button"
+            key={layer}
+            onClick={() => onLayerToggle(layer)}
+            aria-pressed={layerFilters[layer]}
+          >
+            <span className={`layer-dot layer-${layer}`} />
+            {getLayer(layer).label}
+          </button>
+        ))}
+      </div>
+
+      <div className="calendar-status-filters" aria-label="時間軸狀態篩選">
+        {calendarStatusFilterIds.map((filter) => (
+          <button
+            className={statusFilter === filter ? 'calendar-status-filter active' : 'calendar-status-filter'}
+            type="button"
+            key={filter}
+            onClick={() => onStatusFilterChange(filter)}
+            aria-pressed={statusFilter === filter}
+          >
+            {calendarStatusFilterLabels[filter]}
+          </button>
+        ))}
+      </div>
+
+      <div className="timeline-scroll" aria-label={`${range.startDate} 到 ${range.endDate} 的時間軸`}>
+        <div className="timeline-header" style={timelineStyle}>
+          {columns.map((column) => (
+            <div className={column.isCurrent ? 'timeline-column current' : 'timeline-column'} key={column.id}>
+              <strong>{column.label}</strong>
+              <span>{column.sublabel}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="timeline-bars" style={barRowStyle}>
+          {segments.map((segment) => {
+            const { entry } = segment
+            const barStyle = {
+              gridColumn: `${segment.startColumn} / ${segment.endColumn + 1}`,
+              gridRow: segment.lane + 1,
+            } as CSSProperties
+            const riskTone = getCalendarRiskTone(entry.item)
+            const label = `${getLayer(entry.layer).label} ${entry.item.title}，${entry.startDate} 到 ${entry.endDate}，${statusLabels[entry.item.status]}${entry.item.deadlineDate ? `，截止 ${entry.item.deadlineDate}` : ''}`
+
+            return (
+              <button
+                className={[
+                  'timeline-bar',
+                  `layer-${entry.layer}`,
+                  `risk-${riskTone}`,
+                  selectedItemId === entry.item.id ? 'selected' : '',
+                  segment.continuesBefore ? 'continues-before' : '',
+                  segment.continuesAfter ? 'continues-after' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+                type="button"
+                key={`${entry.item.id}-${segment.startColumn}-${segment.endColumn}`}
+                style={barStyle}
+                title={label}
+                aria-label={label}
+                onClick={() => onSelectItem(entry.item)}
+              >
+                <span className={`node-badge layer-${entry.layer}`}>{getLayer(entry.layer).short}</span>
+                <span className="timeline-bar-title">{entry.item.title}</span>
+                <span className="timeline-bar-meta">{statusLabels[entry.item.status]}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {!hasActiveLayer ? (
+        <EmptyState label="請至少開啟一個層級篩選" />
+      ) : entries.length === 0 ? (
+        <EmptyState label={emptyLabel} />
+      ) : (
+        <p className="calendar-hint">時間軸使用開始日期到應完成日；沒有日期的物件會列在下方。</p>
+      )}
+
+      {unscheduledItems.length > 0 && (
+        <div className="timeline-unscheduled">
+          <div className="section-heading compact">
+            <div>
+              <p className="eyebrow">{unscheduledLabel}</p>
+              <h3>{unscheduledItems.length} 個物件</h3>
+            </div>
+          </div>
+          <div className="timeline-unscheduled-list">
+            {unscheduledItems.map((item) => (
+              <div className="timeline-unscheduled-item" key={item.id}>
+                <span className={`node-badge layer-${item.layer}`}>{getLayer(item.layer).short}</span>
+                <div>
+                  <strong>{item.title}</strong>
+                  <p>{item.note || connectionSummary(item, allItems)}</p>
+                </div>
+                <span>{statusLabels[item.status]}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -3346,6 +3825,64 @@ function getCalendarRangeEntries(
   return entries.sort(compareCalendarRangeEntries)
 }
 
+function getTimelineRangeEntries<TLayer extends TimelineLayer>(
+  items: LifeItem[],
+  layerFilters: Record<TLayer, boolean>,
+  layerIds: TLayer[],
+  rangeStart: string,
+  rangeEnd: string,
+  statusFilter: CalendarStatusFilter,
+) {
+  const entries: CalendarRangeEntry[] = []
+
+  items.forEach((item) => {
+    if (!layerIds.includes(item.layer as TLayer)) return
+
+    const layer = item.layer as TLayer
+    if (!layerFilters[layer]) return
+    if (!matchesCalendarStatusFilter(item, statusFilter)) return
+
+    const range = getCalendarRange(item)
+    if (!range) return
+
+    const displayEndDate =
+      item.deadlineDate && item.deadlineDate > range.endDate ? item.deadlineDate : range.endDate
+    const hasVisibleRange = rangesOverlap(range.startDate, displayEndDate, rangeStart, rangeEnd)
+    const hasVisibleDeadline = Boolean(
+      item.deadlineDate && item.deadlineDate >= rangeStart && item.deadlineDate <= rangeEnd,
+    )
+    if (!hasVisibleRange && !hasVisibleDeadline) return
+
+    entries.push({
+      item,
+      layer: item.layer as TimelineLayer,
+      startDate: range.startDate,
+      endDate: range.endDate,
+    })
+  })
+
+  return entries.sort((left, right) => compareTimelineRangeEntries(left, right, layerIds))
+}
+
+function getUnscheduledTimelineItems<TLayer extends TimelineLayer>(
+  items: LifeItem[],
+  layerFilters: Record<TLayer, boolean>,
+  layerIds: TLayer[],
+  statusFilter: CalendarStatusFilter,
+) {
+  return items
+    .filter((item) => {
+      if (!layerIds.includes(item.layer as TLayer)) return false
+      const layer = item.layer as TLayer
+      return layerFilters[layer] && matchesCalendarStatusFilter(item, statusFilter) && !getCalendarRange(item)
+    })
+    .sort((left, right) => {
+      const layerCompared = layerIds.indexOf(left.layer as TLayer) - layerIds.indexOf(right.layer as TLayer)
+      if (layerCompared !== 0) return layerCompared
+      return right.updatedDate.localeCompare(left.updatedDate) || left.title.localeCompare(right.title, 'zh-Hant')
+    })
+}
+
 function matchesCalendarStatusFilter(item: LifeItem, filter: CalendarStatusFilter) {
   if (filter === 'all') return true
   if (filter === 'overdue') return isOverdue(item)
@@ -3374,13 +3911,25 @@ function getCalendarRange(item: LifeItem) {
 }
 
 function compareCalendarRangeEntries(left: CalendarRangeEntry, right: CalendarRangeEntry) {
+  return compareTimelineRangeEntries(left, right, calendarLayerIds)
+}
+
+function compareTimelineRangeEntries(
+  left: CalendarRangeEntry,
+  right: CalendarRangeEntry,
+  layerOrder: readonly TimelineLayer[],
+) {
   const startCompared = left.startDate.localeCompare(right.startDate)
   if (startCompared !== 0) return startCompared
 
   const endCompared = left.endDate.localeCompare(right.endDate)
   if (endCompared !== 0) return endCompared
 
-  const layerCompared = calendarLayerIds.indexOf(left.layer) - calendarLayerIds.indexOf(right.layer)
+  const leftLayerIndex = layerOrder.indexOf(left.layer)
+  const rightLayerIndex = layerOrder.indexOf(right.layer)
+  const layerCompared =
+    (leftLayerIndex === -1 ? timelineLayerIds.length : leftLayerIndex) -
+    (rightLayerIndex === -1 ? timelineLayerIds.length : rightLayerIndex)
   if (layerCompared !== 0) return layerCompared
 
   return left.item.title.localeCompare(right.item.title, 'zh-Hant')
@@ -3497,6 +4046,93 @@ function buildCalendarDeadlineFlags(
   return flags
 }
 
+function buildTimelineSegments<TLayer extends TimelineLayer>(
+  entries: CalendarRangeEntry[],
+  columns: TimelineColumn[],
+  layerOrder: TLayer[],
+) {
+  const segments: TimelineSegment[] = []
+  const laneEnds: string[] = []
+  const rangeStart = columns[0]?.startDate
+  const rangeEnd = columns[columns.length - 1]?.endDate
+  if (!rangeStart || !rangeEnd) return segments
+
+  entries
+    .filter((entry) => rangesOverlap(entry.startDate, entry.endDate, rangeStart, rangeEnd))
+    .sort((left, right) => compareTimelineRangeEntries(left, right, layerOrder))
+    .forEach((entry) => {
+      const segmentStart = maxDate(entry.startDate, rangeStart)
+      const segmentEnd = minDate(entry.endDate, rangeEnd)
+      const startIndex = columns.findIndex((column) => column.endDate >= segmentStart)
+      const endIndex = findLastIndex(columns, (column) => column.startDate <= segmentEnd)
+      if (startIndex === -1 || endIndex === -1) return
+
+      const reusableLane = laneEnds.findIndex((endDate) => endDate < segmentStart)
+      const lane = reusableLane === -1 ? laneEnds.length : reusableLane
+
+      laneEnds[lane] = segmentEnd
+      segments.push({
+        entry,
+        startColumn: startIndex + 1,
+        endColumn: endIndex + 1,
+        lane,
+        continuesBefore: entry.startDate < segmentStart,
+        continuesAfter: entry.endDate > segmentEnd,
+      })
+    })
+
+  return segments
+}
+
+function getRollingRange(startDate: string, days: number): WeeklyRange {
+  return {
+    startDate,
+    endDate: addDays(startDate, days),
+  }
+}
+
+function getRollingWeekColumns(startDate: string): TimelineColumn[] {
+  const today = currentDate()
+
+  return Array.from({ length: 13 }, (_, index) => {
+    const weekStart = addDays(startDate, index * 7)
+    const weekEnd = addDays(weekStart, 6)
+
+    return {
+      id: weekStart,
+      label: `第 ${index + 1} 週`,
+      sublabel: `${weekStart.slice(5)} - ${weekEnd.slice(5)}`,
+      startDate: weekStart,
+      endDate: weekEnd,
+      isCurrent: today >= weekStart && today <= weekEnd,
+    }
+  })
+}
+
+function getHorizonRange(startMonth: string): WeeklyRange {
+  return {
+    startDate: startMonth,
+    endDate: getMonthEnd(shiftMonth(startMonth, 35)),
+  }
+}
+
+function getHorizonMonthColumns(startMonth: string): TimelineColumn[] {
+  const today = currentDate()
+
+  return Array.from({ length: 36 }, (_, index) => {
+    const month = shiftMonth(startMonth, index)
+
+    return {
+      id: month,
+      label: month.slice(0, 4),
+      sublabel: `${Number(month.slice(5, 7))}月`,
+      startDate: month,
+      endDate: getMonthEnd(month),
+      isCurrent: today >= month && today <= getMonthEnd(month),
+    }
+  })
+}
+
 function getMonthDays(month: string): MonthDay[] {
   const firstDay = parseLocalDate(month)
   const mondayFirstWeekday = firstDay.getDay() || 7
@@ -3519,6 +4155,10 @@ function getMonthDays(month: string): MonthDay[] {
 
 function getMonthKey(date: string) {
   return `${date.slice(0, 7)}-01`
+}
+
+function getYearStartMonth(date: string) {
+  return `${date.slice(0, 4)}-01-01`
 }
 
 function getMonthEnd(month: string) {
@@ -3561,6 +4201,14 @@ function maxDate(left: string, right: string) {
 
 function rangesOverlap(leftStart: string, leftEnd: string, rightStart: string, rightEnd: string) {
   return leftStart <= rightEnd && leftEnd >= rightStart
+}
+
+function findLastIndex<T>(items: T[], predicate: (item: T) => boolean) {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (predicate(items[index])) return index
+  }
+
+  return -1
 }
 
 function daysBetween(startDate: string, endDate: string) {

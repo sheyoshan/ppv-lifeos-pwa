@@ -20,6 +20,10 @@
   --layer-project-soft: #ededff;
   --layer-outcome: #a35414;
   --layer-outcome-soft: #fff1df;
+  --layer-goal: #7a3fb0;
+  --layer-goal-soft: #f3e9ff;
+  --layer-purpose: #8d3a53;
+  --layer-purpose-soft: #ffeaf0;
   --risk-high-bg: #fff1f0;
   --risk-high-border: #f1b8b4;
   --risk-high-text: #a0342b;
@@ -114,6 +118,10 @@ p {
     --layer-project-soft: #25294a;
     --layer-outcome: #f4c477;
     --layer-outcome-soft: #3d2a16;
+    --layer-goal: #d6a8ff;
+    --layer-goal-soft: #33213f;
+    --layer-purpose: #ffadc1;
+    --layer-purpose-soft: #3e2029;
     --risk-high-bg: #3b1e1c;
     --risk-high-border: #8d4740;
     --risk-high-text: #ffb8b1;
