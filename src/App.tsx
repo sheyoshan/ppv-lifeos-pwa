@@ -14,6 +14,18 @@ type LayerId =
 type Status = 'not-started' | 'active' | 'done'
 type TabId = 'home' | 'map' | 'actions' | 'data'
 type PanelMode = 'relationship' | 'edit' | 'create'
+type StatusFilter = 'all' | Status
+type DateFilter = 'all' | 'overdue' | 'today' | 'this-week' | 'unscheduled' | 'done'
+type LinkFilter = 'all' | 'unlinked-parent' | 'has-parent' | 'has-child' | 'no-child'
+type SortField =
+  | 'createdDate'
+  | 'startDate'
+  | 'scheduledDate'
+  | 'dueDate'
+  | 'completedDate'
+  | 'updatedDate'
+  | 'title'
+type SortDirection = 'asc' | 'desc'
 
 type LifeItem = {
   id: string
@@ -55,7 +67,18 @@ type AncestorNode = {
   cycle?: boolean
 }
 
+type MapPreference = {
+  searchText: string
+  statusFilter: StatusFilter
+  dateFilter: DateFilter
+  linkFilter: LinkFilter
+  sortField: SortField
+  sortDirection: SortDirection
+  controlsCollapsed: boolean
+}
+
 const STORAGE_KEY = 'ppv-lifeos-data-v1'
+const MAP_PREFERENCES_KEY = 'ppv-lifeos-map-preferences-v1'
 
 const layers: Array<{
   id: LayerId
@@ -121,6 +144,26 @@ const statusLabels: Record<Status, string> = {
   done: '完成',
 }
 
+const sortFieldLabels: Record<SortField, string> = {
+  createdDate: '建立日期',
+  startDate: '開始日期',
+  scheduledDate: '預計日期',
+  dueDate: '截止日期',
+  completedDate: '完成日期',
+  updatedDate: '修改日期',
+  title: '名稱',
+}
+
+const defaultMapPreference: MapPreference = {
+  searchText: '',
+  statusFilter: 'all',
+  dateFilter: 'all',
+  linkFilter: 'all',
+  sortField: 'updatedDate',
+  sortDirection: 'desc',
+  controlsCollapsed: true,
+}
+
 const dateFieldLabels: Array<{ key: keyof Pick<
   Draft,
   'createdDate' | 'startDate' | 'completedDate' | 'scheduledDate' | 'dueDate'
@@ -134,6 +177,9 @@ const dateFieldLabels: Array<{ key: keyof Pick<
 
 function App() {
   const [items, setItems] = useState<LifeItem[]>(() => loadItems())
+  const [mapPreferencesByLayer, setMapPreferencesByLayer] = useState<Record<LayerId, MapPreference>>(
+    () => loadMapPreferences(),
+  )
   const [activeTab, setActiveTab] = useState<TabId>('home')
   const [activeLayer, setActiveLayer] = useState<LayerId>('principle')
   const [selectedItemId, setSelectedItemId] = useState('')
@@ -147,13 +193,39 @@ function App() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, items }))
   }, [items])
 
+  useEffect(() => {
+    localStorage.setItem(MAP_PREFERENCES_KEY, JSON.stringify(mapPreferencesByLayer))
+  }, [mapPreferencesByLayer])
+
   const activeLayerMeta = getLayer(activeLayer)
   const activeLayerItems = items.filter((item) => item.layer === activeLayer)
+  const activeMapPreference = mapPreferencesByLayer[activeLayer] ?? defaultMapPreference
+  const visibleLayerItems = getVisibleLayerItems(activeLayerItems, items, activeMapPreference)
   const actionItems = items.filter((item) => item.layer === 'action')
   const pendingActions = actionItems.filter((item) => item.status !== 'done')
   const activeProjects = items.filter((item) => item.layer === 'project' && item.status !== 'done')
   const unlinkedItems = items.filter((item) => getLayer(item.layer).parent && item.parentIds.length === 0)
   const selectedItem = items.find((item) => item.id === selectedItemId) ?? null
+
+  function updateActiveMapPreference(patch: Partial<MapPreference>) {
+    setMapPreferencesByLayer((current) => ({
+      ...current,
+      [activeLayer]: {
+        ...(current[activeLayer] ?? defaultMapPreference),
+        ...patch,
+      },
+    }))
+  }
+
+  function clearActiveMapPreference() {
+    setMapPreferencesByLayer((current) => ({
+      ...current,
+      [activeLayer]: {
+        ...defaultMapPreference,
+        controlsCollapsed: current[activeLayer]?.controlsCollapsed ?? defaultMapPreference.controlsCollapsed,
+      },
+    }))
+  }
 
   function saveDraft(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -401,7 +473,9 @@ function App() {
                   <p className="eyebrow">架構瀏覽</p>
                   <h2>{activeLayerMeta.label}</h2>
                 </div>
-                <span className="count-pill">{activeLayerItems.length}</span>
+                <span className="count-pill">
+                  {visibleLayerItems.length} / {activeLayerItems.length}
+                </span>
               </div>
               <p className="muted">{activeLayerMeta.description}</p>
               <div className="segmented" aria-label="選擇層級">
@@ -422,8 +496,15 @@ function App() {
                   </button>
                 ))}
               </div>
+              <MapListControls
+                filteredCount={visibleLayerItems.length}
+                preference={activeMapPreference}
+                totalCount={activeLayerItems.length}
+                onChange={updateActiveMapPreference}
+                onClear={clearActiveMapPreference}
+              />
               <div className="item-list">
-                {activeLayerItems.map((item) => (
+                {visibleLayerItems.map((item) => (
                   <button
                     className={item.id === selectedItemId ? 'item-card selected' : 'item-card'}
                     type="button"
@@ -436,6 +517,9 @@ function App() {
                   </button>
                 ))}
                 {activeLayerItems.length === 0 && <EmptyState label={`尚未建立${activeLayerMeta.label}`} />}
+                {activeLayerItems.length > 0 && visibleLayerItems.length === 0 && (
+                  <EmptyState label="沒有符合目前篩選的物件" />
+                )}
               </div>
             </div>
 
@@ -778,6 +862,128 @@ function RelationshipEmptyState({ onCreate }: { onCreate: () => void }) {
   )
 }
 
+function MapListControls({
+  filteredCount,
+  preference,
+  totalCount,
+  onChange,
+  onClear,
+}: {
+  filteredCount: number
+  preference: MapPreference
+  totalCount: number
+  onChange: (patch: Partial<MapPreference>) => void
+  onClear: () => void
+}) {
+  const sortLabel = sortFieldLabels[preference.sortField]
+  const directionLabel = preference.sortDirection === 'asc' ? '升冪' : '降冪'
+
+  return (
+    <div className="map-controls" aria-label="架構列表篩選與排序">
+      <div className="map-controls-summary">
+        <button
+          type="button"
+          onClick={() => onChange({ controlsCollapsed: !preference.controlsCollapsed })}
+        >
+          {preference.controlsCollapsed ? '展開篩選排序' : '收合篩選排序'}
+        </button>
+        <span className="filter-count">
+          {filteredCount} / {totalCount}
+        </span>
+        <span className="filter-summary">
+          {sortLabel} · {directionLabel}
+        </span>
+        <button className="ghost-button clear-filter-button" type="button" onClick={onClear}>
+          清除篩選
+        </button>
+      </div>
+
+      {!preference.controlsCollapsed && (
+        <div className="map-controls-body">
+          <label className="map-control search-control">
+            搜尋
+            <input
+              value={preference.searchText}
+              placeholder="名稱或說明"
+              onChange={(event) => onChange({ searchText: event.target.value })}
+            />
+          </label>
+
+          <label className="map-control">
+            狀態
+            <select
+              value={preference.statusFilter}
+              onChange={(event) => onChange({ statusFilter: event.target.value as StatusFilter })}
+            >
+              <option value="all">全部</option>
+              <option value="not-started">未開始</option>
+              <option value="active">進行中</option>
+              <option value="done">完成</option>
+            </select>
+          </label>
+
+          <label className="map-control">
+            日期
+            <select
+              value={preference.dateFilter}
+              onChange={(event) => onChange({ dateFilter: event.target.value as DateFilter })}
+            >
+              <option value="all">全部</option>
+              <option value="overdue">逾期</option>
+              <option value="today">今天</option>
+              <option value="this-week">本週</option>
+              <option value="unscheduled">未排日期</option>
+              <option value="done">已完成</option>
+            </select>
+          </label>
+
+          <label className="map-control">
+            連結
+            <select
+              value={preference.linkFilter}
+              onChange={(event) => onChange({ linkFilter: event.target.value as LinkFilter })}
+            >
+              <option value="all">全部</option>
+              <option value="unlinked-parent">未連結上層</option>
+              <option value="has-parent">有上層</option>
+              <option value="has-child">有下層</option>
+              <option value="no-child">無下層</option>
+            </select>
+          </label>
+
+          <label className="map-control">
+            排序
+            <select
+              value={preference.sortField}
+              onChange={(event) => onChange({ sortField: event.target.value as SortField })}
+            >
+              <option value="updatedDate">修改日期</option>
+              <option value="createdDate">建立日期</option>
+              <option value="startDate">開始日期</option>
+              <option value="scheduledDate">預計日期</option>
+              <option value="dueDate">截止日期</option>
+              <option value="completedDate">完成日期</option>
+              <option value="title">名稱</option>
+            </select>
+          </label>
+
+          <div className="map-control compact-control">
+            <span>方向</span>
+            <button
+              type="button"
+              onClick={() =>
+                onChange({ sortDirection: preference.sortDirection === 'asc' ? 'desc' : 'asc' })
+              }
+            >
+              {directionLabel}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function AncestorBranch({ node, depth }: { node: AncestorNode; depth: number }) {
   return (
     <div className="ancestor-branch" style={{ marginLeft: depth * 14 }}>
@@ -840,6 +1046,44 @@ function loadItems(): LifeItem[] {
   }
 }
 
+function loadMapPreferences(): Record<LayerId, MapPreference> {
+  const defaults = Object.fromEntries(
+    layers.map((layer) => [layer.id, defaultMapPreference]),
+  ) as Record<LayerId, MapPreference>
+
+  try {
+    const stored = localStorage.getItem(MAP_PREFERENCES_KEY)
+    if (!stored) return defaults
+    const parsed = JSON.parse(stored) as Partial<Record<LayerId, Partial<MapPreference>>>
+
+    return Object.fromEntries(
+      layers.map((layer) => [
+        layer.id,
+        normalizeMapPreference(parsed[layer.id] ?? defaultMapPreference),
+      ]),
+    ) as Record<LayerId, MapPreference>
+  } catch {
+    return defaults
+  }
+}
+
+function normalizeMapPreference(preference: Partial<MapPreference>): MapPreference {
+  return {
+    searchText: typeof preference.searchText === 'string' ? preference.searchText : '',
+    statusFilter: isStatusFilter(preference.statusFilter) ? preference.statusFilter : 'all',
+    dateFilter: isDateFilter(preference.dateFilter) ? preference.dateFilter : 'all',
+    linkFilter: isLinkFilter(preference.linkFilter) ? preference.linkFilter : 'all',
+    sortField: isSortField(preference.sortField) ? preference.sortField : 'updatedDate',
+    sortDirection: preference.sortDirection === 'asc' || preference.sortDirection === 'desc'
+      ? preference.sortDirection
+      : 'desc',
+    controlsCollapsed:
+      typeof preference.controlsCollapsed === 'boolean'
+        ? preference.controlsCollapsed
+        : defaultMapPreference.controlsCollapsed,
+  }
+}
+
 function normalizeItem(item: unknown): LifeItem | null {
   if (!item || typeof item !== 'object') return null
   const candidate = item as LegacyItem
@@ -871,6 +1115,43 @@ function isStatus(status: unknown): status is Status {
   return status === 'not-started' || status === 'active' || status === 'done'
 }
 
+function isStatusFilter(filter: unknown): filter is StatusFilter {
+  return filter === 'all' || isStatus(filter)
+}
+
+function isDateFilter(filter: unknown): filter is DateFilter {
+  return (
+    filter === 'all' ||
+    filter === 'overdue' ||
+    filter === 'today' ||
+    filter === 'this-week' ||
+    filter === 'unscheduled' ||
+    filter === 'done'
+  )
+}
+
+function isLinkFilter(filter: unknown): filter is LinkFilter {
+  return (
+    filter === 'all' ||
+    filter === 'unlinked-parent' ||
+    filter === 'has-parent' ||
+    filter === 'has-child' ||
+    filter === 'no-child'
+  )
+}
+
+function isSortField(field: unknown): field is SortField {
+  return (
+    field === 'createdDate' ||
+    field === 'startDate' ||
+    field === 'scheduledDate' ||
+    field === 'dueDate' ||
+    field === 'completedDate' ||
+    field === 'updatedDate' ||
+    field === 'title'
+  )
+}
+
 function isLayer(layerId: unknown): layerId is LayerId {
   return layers.some((layer) => layer.id === layerId)
 }
@@ -894,6 +1175,69 @@ function emptyDraft(layer: LayerId): Draft {
     scheduledDate: '',
     dueDate: '',
   }
+}
+
+function getVisibleLayerItems(
+  layerItems: LifeItem[],
+  allItems: LifeItem[],
+  preference: MapPreference,
+) {
+  const searchText = preference.searchText.trim().toLowerCase()
+
+  return layerItems
+    .filter((item) => {
+      const matchesSearch =
+        !searchText ||
+        item.title.toLowerCase().includes(searchText) ||
+        item.note.toLowerCase().includes(searchText)
+      const matchesStatus =
+        preference.statusFilter === 'all' || item.status === preference.statusFilter
+      const matchesDate = matchesDateFilter(item, preference.dateFilter)
+      const matchesLink = matchesLinkFilter(item, allItems, preference.linkFilter)
+
+      return matchesSearch && matchesStatus && matchesDate && matchesLink
+    })
+    .sort((left, right) => compareItems(left, right, preference))
+}
+
+function matchesDateFilter(item: LifeItem, filter: DateFilter) {
+  if (filter === 'all') return true
+  if (filter === 'done') return item.status === 'done'
+  if (filter === 'unscheduled') return !hasAnyScheduleDate(item)
+  if (filter === 'overdue') return isOverdue(item)
+  if (filter === 'today') return isToday(getScheduleDate(item))
+  if (filter === 'this-week') return isThisWeek(getScheduleDate(item))
+  return true
+}
+
+function matchesLinkFilter(item: LifeItem, allItems: LifeItem[], filter: LinkFilter) {
+  const hasParent = item.parentIds.length > 0
+  const hasChild = allItems.some((candidate) => candidate.parentIds.includes(item.id))
+
+  if (filter === 'all') return true
+  if (filter === 'unlinked-parent') return Boolean(getLayer(item.layer).parent) && !hasParent
+  if (filter === 'has-parent') return hasParent
+  if (filter === 'has-child') return hasChild
+  if (filter === 'no-child') return !hasChild
+  return true
+}
+
+function compareItems(left: LifeItem, right: LifeItem, preference: MapPreference) {
+  const direction = preference.sortDirection === 'asc' ? 1 : -1
+
+  if (preference.sortField === 'title') {
+    return left.title.localeCompare(right.title, 'zh-Hant') * direction
+  }
+
+  const leftValue = left[preference.sortField]
+  const rightValue = right[preference.sortField]
+
+  if (!leftValue && !rightValue) return left.title.localeCompare(right.title, 'zh-Hant')
+  if (!leftValue) return 1
+  if (!rightValue) return -1
+
+  const compared = leftValue.localeCompare(rightValue)
+  return compared === 0 ? left.title.localeCompare(right.title, 'zh-Hant') : compared * direction
 }
 
 function connectionSummary(item: LifeItem, items: LifeItem[]) {
@@ -959,8 +1303,46 @@ function dateSummary(item: LifeItem) {
   return parts.join(' · ')
 }
 
+function getScheduleDate(item: LifeItem) {
+  return item.scheduledDate || item.dueDate
+}
+
+function hasAnyScheduleDate(item: LifeItem) {
+  return Boolean(getScheduleDate(item))
+}
+
+function isOverdue(item: LifeItem) {
+  const date = getScheduleDate(item)
+  return Boolean(date && item.status !== 'done' && date < currentDate())
+}
+
+function isToday(date: string) {
+  return Boolean(date && date === currentDate())
+}
+
+function isThisWeek(date: string) {
+  if (!date) return false
+
+  const target = new Date(`${date}T00:00:00`)
+  const now = new Date()
+  const day = now.getDay() || 7
+  const weekStart = new Date(now)
+  weekStart.setDate(now.getDate() - day + 1)
+  weekStart.setHours(0, 0, 0, 0)
+
+  const weekEnd = new Date(weekStart)
+  weekEnd.setDate(weekStart.getDate() + 6)
+  weekEnd.setHours(23, 59, 59, 999)
+
+  return target >= weekStart && target <= weekEnd
+}
+
 function currentDate() {
-  return new Date().toISOString().slice(0, 10)
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 function normalizeDate(value: unknown) {
