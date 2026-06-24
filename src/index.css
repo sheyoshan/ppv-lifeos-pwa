@@ -10,6 +10,10 @@
   --accent-soft: #e6f3ef;
   --button: #ffffff;
   --success: #1f8a62;
+  --nav-bg: rgba(255, 255, 255, 0.88);
+  --nav-text: #13201e;
+  --nav-active-bg: #13201e;
+  --nav-active-text: #ffffff;
   --focus: rgba(23, 107, 90, 0.22);
   --shadow: 0 12px 30px rgba(23, 40, 36, 0.07);
   --button-shadow: 0 2px 0 rgba(19, 32, 30, 0.05);
@@ -85,6 +89,10 @@ p {
     --accent-soft: #193a33;
     --button: #1d2925;
     --success: #43b883;
+    --nav-bg: rgba(24, 34, 31, 0.9);
+    --nav-text: #edf6f2;
+    --nav-active-bg: #7bd5bd;
+    --nav-active-text: #10201c;
     --focus: rgba(123, 213, 189, 0.24);
     --shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
     --button-shadow: none;

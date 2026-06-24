@@ -476,7 +476,7 @@ textarea {
   padding: 6px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.88);
+  background: var(--nav-bg);
   box-shadow: var(--float-shadow);
   backdrop-filter: blur(18px);
 }
@@ -485,12 +485,13 @@ textarea {
   min-height: 44px;
   background: transparent;
   border-color: transparent;
+  color: var(--nav-text);
   box-shadow: none;
 }
 
 .bottom-nav button.active {
-  background: var(--ink);
-  color: white;
+  background: var(--nav-active-bg);
+  color: var(--nav-active-text);
 }
 
 .empty-state {
