@@ -1830,6 +1830,124 @@ textarea {
   margin-top: 16px;
 }
 
+.data-status-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.data-status-summary,
+.execution-status-grid,
+.archive-candidate-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.archive-candidate-grid,
+.execution-status-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.data-status-card,
+.execution-status-card,
+.data-status-group {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--field);
+}
+
+.data-status-card {
+  min-height: 92px;
+  padding: 14px;
+}
+
+.data-status-card strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--ink);
+  font-size: 26px;
+  line-height: 1;
+}
+
+.data-status-card span,
+.execution-status-card span,
+.data-status-row span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.data-status-groups {
+  display: grid;
+  gap: 12px;
+}
+
+.data-status-group {
+  padding: 14px;
+}
+
+.data-status-group-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.data-status-group-heading h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.data-status-group-heading span {
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 5px 10px;
+}
+
+.data-layer-counts {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.data-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 42px;
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 9px 10px;
+}
+
+.data-status-row strong {
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.execution-status-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.execution-status-card > div:first-child {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.execution-status-card > div:first-child strong {
+  color: var(--ink);
+  font-size: 24px;
+  line-height: 1;
+}
+
 .notice {
   position: fixed;
   left: 16px;
@@ -2002,6 +2120,10 @@ textarea:focus-visible {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .data-layer-counts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .weekly-item-row,
   .issue-row {
     grid-template-columns: 36px minmax(0, 1fr);
@@ -2090,6 +2212,10 @@ textarea:focus-visible {
 
   .weekly-summary-grid,
   .weekly-metric-grid,
+  .data-status-summary,
+  .execution-status-grid,
+  .archive-candidate-grid,
+  .data-layer-counts,
   .weekly-item-row,
   .issue-row {
     grid-template-columns: 1fr;

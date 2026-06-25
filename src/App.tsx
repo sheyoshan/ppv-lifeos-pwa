@@ -191,6 +191,26 @@ type LifeData = {
   items: LifeItem[]
 }
 
+type DataStatus = {
+  totalCount: number
+  estimatedJsonBytes: number
+  coreCounts: Record<LayerId, number>
+  project: {
+    total: number
+    open: number
+    done: number
+  }
+  action: {
+    total: number
+    open: number
+    done: number
+  }
+  archiveCandidates: {
+    actions: number
+    projects: number
+  }
+}
+
 type ItemInput = Partial<LifeItem> & Record<string, unknown>
 
 type AncestorNode = {
@@ -292,6 +312,7 @@ const layers: Array<{
   },
 ]
 
+const coreLayerIds: LayerId[] = ['principle', 'pillar', 'purpose', 'goal', 'outcome']
 const calendarLayerIds: CalendarLayer[] = ['outcome', 'project', 'action']
 const roadmapLayerIds: RoadmapLayer[] = ['goal', 'outcome', 'project']
 const horizonLayerIds: HorizonLayer[] = ['purpose', 'goal']
@@ -768,6 +789,45 @@ const encyclopediaSections: EncyclopediaSection[] = [
         ],
         examples: [
           '週回顧時問：本週完成了哪些行動？它們推進了哪些專案？專案有沒有創造結果？',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'maintenance',
+    label: '系統維護',
+    articles: [
+      {
+        id: 'data-maintenance-archive',
+        eyebrow: '資料維護',
+        title: '資料維護與封存策略',
+        concept: [
+          'PPV Life OS 的資料不是平均成長。原則、支柱、目的、目標與結果是長期脈絡資料；專案與行動是執行流水資料。',
+          '資料狀態面板的用途，是讓你看見目前系統的重量主要來自哪裡，而不是把所有物件都當成同一種負擔。',
+        ],
+        why: [
+          '原則到結果即使完成，也常常是回顧人生方向、季度成果與長期模式的證據，通常應該留在主資料中。',
+          '專案與行動累積最快。大量完成行動留在主資料中，會逐漸影響列表、篩選、月曆、週回顧與 JSON 匯入匯出的速度。',
+          '先看資料狀態，再決定是否封存，可以避免為了清爽而破壞上層脈絡。',
+        ],
+        practice: [
+          '先看總物件數與 JSON 估算大小。幾百 KB 通常不用擔心；數 MB 以上時，匯入匯出與手機端切換可能開始變慢。',
+          '再看核心層資料。原則、支柱、目的、目標、結果即使完成也不預設封存，因為它們保留的是方向、意義與成果證據。',
+          '接著看執行層資料。若已完成行動遠高於未完成行動，代表日常流水正在累積；若已完成專案很多，代表可以開始整理歷史執行資料。',
+          '行動封存候選可用保守標準：已完成、有完成日期、完成超過 90 天。',
+          '專案封存候選可用保守標準：已完成、有完成日期、完成超過 180 天，且底下沒有未完成行動。',
+          '封存前先確認相關結果仍留在主資料中，並確認專案底下沒有仍需要推進的行動。',
+        ],
+        mistakes: [
+          '把完成的結果也大量移出主資料，導致未來回顧只剩任務紀錄，失去成果脈絡。',
+          '只因為總物件數變多就急著清理，而沒有先看膨脹來源是否其實集中在完成行動。',
+          '封存專案前沒有檢查底下未完成行動，造成執行承諾被藏到歷史檔案中。',
+          '把封存當成刪除。封存應該是把歷史流水移到備份檔，而不是讓人生紀錄消失。',
+        ],
+        examples: [
+          '如果系統有 1,200 個物件，其中原則到結果只有 250 個，行動有 800 個且 650 個已完成，真正需要控管的是完成行動。',
+          '如果某個結果已完成，但它代表一季的重要交付成果，建議保留結果本身；只把底下很舊的完成行動列為封存候選。',
+          '如果 JSON 大小接近 5 MB，且已完成行動超過數千筆，可以先匯出完整備份，再考慮未來使用封存功能整理執行流水。',
         ],
       },
     ],
@@ -1544,15 +1604,7 @@ function App() {
               onArticleChange={setActiveEncyclopediaId}
             />
 
-            <div className="section-block">
-              <div className="section-heading">
-                <h2>資料狀態</h2>
-                <span className="count-pill">{items.length} 個物件</span>
-              </div>
-              <p className="muted">
-                目前允許多個父層，也允許不連結父層；未連結不再視為錯誤，而是保留彈性。
-              </p>
-            </div>
+            <DataStatusPanel items={items} />
           </section>
         )}
       </main>
@@ -2335,6 +2387,107 @@ function EncyclopediaArticlePart({
         ))}
       </ListTag>
     </section>
+  )
+}
+
+function DataStatusPanel({ items }: { items: LifeItem[] }) {
+  const status = getDataStatus(items)
+
+  return (
+    <section className="section-block data-status-panel">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">資料狀態</p>
+          <h2>本機資料概況</h2>
+        </div>
+        <span className="count-pill">{formatCount(status.totalCount)} 個物件</span>
+      </div>
+
+      <div className="data-status-summary">
+        <DataStatusCard label="總物件" value={formatCount(status.totalCount)} />
+        <DataStatusCard label="JSON 估算大小" value={formatBytes(status.estimatedJsonBytes)} />
+        <DataStatusCard label="資料格式" value="v3" />
+      </div>
+
+      <div className="data-status-groups">
+        <section className="data-status-group">
+          <div className="data-status-group-heading">
+            <h3>核心層資料</h3>
+            <span>{formatCount(coreLayerIds.reduce((total, layer) => total + status.coreCounts[layer], 0))}</span>
+          </div>
+          <div className="data-layer-counts">
+            {coreLayerIds.map((layerId) => (
+              <DataStatusRow
+                key={layerId}
+                label={getLayer(layerId).label}
+                value={formatCount(status.coreCounts[layerId])}
+              />
+            ))}
+          </div>
+        </section>
+
+        <section className="data-status-group">
+          <div className="data-status-group-heading">
+            <h3>執行層資料</h3>
+            <span>{formatCount(status.project.total + status.action.total)}</span>
+          </div>
+          <div className="execution-status-grid">
+            <ExecutionStatusCard label="專案" summary={status.project} />
+            <ExecutionStatusCard label="行動" summary={status.action} />
+          </div>
+        </section>
+
+        <section className="data-status-group archive-status-group">
+          <div className="data-status-group-heading">
+            <h3>封存候選</h3>
+            <span>
+              {formatCount(status.archiveCandidates.actions + status.archiveCandidates.projects)}
+            </span>
+          </div>
+          <div className="archive-candidate-grid">
+            <DataStatusCard label="可封存行動" value={formatCount(status.archiveCandidates.actions)} />
+            <DataStatusCard label="可封存專案" value={formatCount(status.archiveCandidates.projects)} />
+          </div>
+        </section>
+      </div>
+    </section>
+  )
+}
+
+function DataStatusCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="data-status-card">
+      <strong>{value}</strong>
+      <span>{label}</span>
+    </div>
+  )
+}
+
+function DataStatusRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="data-status-row">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  )
+}
+
+function ExecutionStatusCard({
+  label,
+  summary,
+}: {
+  label: string
+  summary: DataStatus['project']
+}) {
+  return (
+    <div className="execution-status-card">
+      <div>
+        <span>{label}</span>
+        <strong>{formatCount(summary.total)}</strong>
+      </div>
+      <DataStatusRow label="未完成" value={formatCount(summary.open)} />
+      <DataStatusRow label="已完成" value={formatCount(summary.done)} />
+    </div>
   )
 }
 
@@ -3215,6 +3368,90 @@ function findEncyclopediaArticle(articleId: string) {
     encyclopediaSections.flatMap((section) => section.articles).find((article) => article.id === articleId) ??
     encyclopediaSections[0].articles[0]
   )
+}
+
+function getDataStatus(items: LifeItem[]): DataStatus {
+  const coreCounts = Object.fromEntries(layers.map((layer) => [layer.id, 0])) as Record<LayerId, number>
+
+  for (const item of items) {
+    coreCounts[item.layer] += 1
+  }
+
+  const projectItems = items.filter((item) => item.layer === 'project')
+  const actionItems = items.filter((item) => item.layer === 'action')
+  const archiveCandidates = getArchiveCandidateCounts(items)
+
+  return {
+    totalCount: items.length,
+    estimatedJsonBytes: estimateJsonSize(items),
+    coreCounts,
+    project: {
+      total: projectItems.length,
+      open: projectItems.filter((item) => item.status !== 'done').length,
+      done: projectItems.filter((item) => item.status === 'done').length,
+    },
+    action: {
+      total: actionItems.length,
+      open: actionItems.filter((item) => item.status !== 'done').length,
+      done: actionItems.filter((item) => item.status === 'done').length,
+    },
+    archiveCandidates,
+  }
+}
+
+function estimateJsonSize(items: LifeItem[]) {
+  return new Blob([JSON.stringify({ version: 3, items })]).size
+}
+
+function getArchiveCandidateCounts(items: LifeItem[]) {
+  const today = currentDate()
+  const actionCutoff = addDays(today, -90)
+  const projectCutoff = addDays(today, -180)
+
+  const actions = items.filter(
+    (item) =>
+      item.layer === 'action' &&
+      item.status === 'done' &&
+      Boolean(item.completedDate) &&
+      item.completedDate <= actionCutoff,
+  ).length
+
+  const projects = items.filter((item) => {
+    if (
+      item.layer !== 'project' ||
+      item.status !== 'done' ||
+      !item.completedDate ||
+      item.completedDate > projectCutoff
+    ) {
+      return false
+    }
+
+    return !items.some(
+      (candidate) =>
+        candidate.layer === 'action' &&
+        candidate.status !== 'done' &&
+        candidate.parentIds.includes(item.id),
+    )
+  }).length
+
+  return { actions, projects }
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+
+  const kilobytes = bytes / 1024
+  if (kilobytes < 1024) return `${formatCompactNumber(kilobytes)} KB`
+
+  return `${formatCompactNumber(kilobytes / 1024)} MB`
+}
+
+function formatCount(value: number) {
+  return value.toLocaleString('zh-Hant')
+}
+
+function formatCompactNumber(value: number) {
+  return value >= 10 ? value.toFixed(0) : value.toFixed(1)
 }
 
 function loadItems(): LifeItem[] {
