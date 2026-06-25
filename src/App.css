@@ -160,6 +160,7 @@
 .outcome-card p {
   display: -webkit-box;
   overflow: hidden;
+  white-space: pre-line;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
@@ -1323,6 +1324,20 @@
   gap: 10px;
 }
 
+.next-action-heading-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.next-action-note {
+  margin-top: -2px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .item-card {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -1367,6 +1382,19 @@
 
 .relationship-hero h2 {
   margin: 2px 0 4px;
+}
+
+.relationship-note {
+  display: -webkit-box;
+  max-width: 100%;
+  margin-top: 8px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-line;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
 }
 
 .relationship-actions {
@@ -2207,6 +2235,16 @@ textarea:focus-visible {
   .section-heading button,
   .form-actions button,
   .weekly-intro button {
+    width: 100%;
+  }
+
+  .next-action-heading-actions {
+    justify-content: stretch;
+    width: 100%;
+  }
+
+  .next-action-heading-actions .count-pill {
+    justify-content: center;
     width: 100%;
   }
 

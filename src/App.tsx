@@ -416,6 +416,8 @@ const defaultHorizonLayerFilters: Record<HorizonLayer, boolean> = {
   goal: true,
 }
 
+const NEXT_ACTION_LIMIT = 7
+
 const dateFieldLabels: Array<{ key: keyof Pick<
   Draft,
   'createdDate' | 'startDate' | 'completedDate' | 'dueDate' | 'deadlineDate'
@@ -1002,8 +1004,8 @@ function App() {
   const activeLayerItems = items.filter((item) => item.layer === activeLayer)
   const activeMapPreference = mapPreferencesByLayer[activeLayer] ?? defaultMapPreference
   const visibleLayerItems = getVisibleLayerItems(activeLayerItems, items, activeMapPreference)
-  const actionItems = items.filter((item) => item.layer === 'action')
-  const pendingActions = actionItems.filter((item) => item.status !== 'done')
+  const pendingActions = getNextActions(items)
+  const nextActions = getNextActions(items, NEXT_ACTION_LIMIT)
   const activeProjects = items.filter((item) => item.layer === 'project' && item.status !== 'done')
   const activeOutcomes = items.filter((item) => item.layer === 'outcome' && item.status === 'active')
   const featuredOutcomes = getFeaturedOutcomes(activeOutcomes)
@@ -1343,8 +1345,8 @@ function App() {
             <div className="hero-panel">
               <div>
                 <p className="eyebrow">今日焦點</p>
-                <h2>{pendingActions[0]?.title ?? '先建立你的第一個行動'}</h2>
-                <p>{pendingActions[0]?.note || '行動可以依需要連結到一個或多個上層專案。'}</p>
+                <h2>{nextActions[0]?.title ?? '先建立你的第一個行動'}</h2>
+                {nextActions[0]?.note && <p>{nextActions[0].note}</p>}
               </div>
               <button
                 type="button"
@@ -1484,17 +1486,22 @@ function App() {
                 <p className="eyebrow">下一步</p>
                 <h2>行動清單</h2>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  startCreate('action')
-                }}
-              >
-                新增行動
-              </button>
+              <div className="next-action-heading-actions">
+                <span className="count-pill">
+                  {nextActions.length} / {pendingActions.length}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    startCreate('action')
+                  }}
+                >
+                  新增行動
+                </button>
+              </div>
             </div>
             <div className="action-list">
-              {actionItems.map((item) => (
+              {nextActions.map((item) => (
                 <article className="action-row" key={item.id}>
                   <button
                     className={item.status === 'done' ? 'check done' : 'check'}
@@ -1514,8 +1521,13 @@ function App() {
                   </button>
                 </article>
               ))}
-              {actionItems.length === 0 && <EmptyState label="尚未建立行動" />}
+              {pendingActions.length === 0 && <EmptyState label="目前沒有未完成行動" />}
             </div>
+            {pendingActions.length > nextActions.length && (
+              <p className="next-action-note">
+                已顯示最需要處理的 {nextActions.length} 個行動，其餘行動可在專案管理中查看。
+              </p>
+            )}
 
             <ProjectManagementPanel
               items={items}
@@ -3144,6 +3156,7 @@ function RelationshipPanel({
           <p className="eyebrow">源頭關係</p>
           <h2>{item.title}</h2>
           <p className="muted">{itemMeta(item)}</p>
+          {item.note.trim() && <p className="relationship-note">{item.note}</p>}
         </div>
       </div>
 
@@ -3943,6 +3956,45 @@ function getProjectManagementBranches(items: LifeItem[]): ProjectManagementOutco
         actions: actions.filter((action) => action.parentIds.includes(project.id)),
       })),
   }))
+}
+
+function getNextActions(items: LifeItem[], limit = Number.POSITIVE_INFINITY) {
+  return items
+    .filter((item) => item.layer === 'action' && item.status !== 'done')
+    .sort(compareNextActions)
+    .slice(0, limit)
+}
+
+function compareNextActions(left: LifeItem, right: LifeItem) {
+  const today = currentDate()
+  const upcomingEnd = addDays(today, 7)
+  const leftTimeRank = nextActionTimeRank(left, today, upcomingEnd)
+  const rightTimeRank = nextActionTimeRank(right, today, upcomingEnd)
+
+  if (leftTimeRank !== rightTimeRank) return leftTimeRank - rightTimeRank
+
+  const statusCompared = statusRank(left.status) - statusRank(right.status)
+  if (statusCompared !== 0) return statusCompared
+
+  if (!left.dueDate && right.dueDate) return 1
+  if (left.dueDate && !right.dueDate) return -1
+  if (left.dueDate && right.dueDate) {
+    const dueCompared = left.dueDate.localeCompare(right.dueDate)
+    if (dueCompared !== 0) return dueCompared
+  }
+
+  const updatedCompared = right.updatedDate.localeCompare(left.updatedDate)
+  if (updatedCompared !== 0) return updatedCompared
+
+  return left.title.localeCompare(right.title, 'zh-Hant')
+}
+
+function nextActionTimeRank(item: LifeItem, today: string, upcomingEnd: string) {
+  if (!item.dueDate) return 3
+  if (item.dueDate < today) return 0
+  if (item.dueDate === today) return 1
+  if (item.dueDate <= upcomingEnd) return 2
+  return 3
 }
 
 function compareWorkItems(left: LifeItem, right: LifeItem) {
