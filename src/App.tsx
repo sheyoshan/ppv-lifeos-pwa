@@ -111,6 +111,12 @@ type TimelineSegment = {
   continuesAfter: boolean
 }
 
+type TimelineLayerBand = {
+  layer: TimelineLayer
+  startLane: number
+  laneCount: number
+}
+
 type MonthDay = {
   date: string
   dayNumber: number
@@ -286,7 +292,7 @@ const layers: Array<{
   },
 ]
 
-const calendarLayerIds: CalendarLayer[] = ['action', 'project', 'outcome']
+const calendarLayerIds: CalendarLayer[] = ['outcome', 'project', 'action']
 const roadmapLayerIds: RoadmapLayer[] = ['goal', 'outcome', 'project']
 const horizonLayerIds: HorizonLayer[] = ['purpose', 'goal']
 const timelineLayerIds: TimelineLayer[] = ['purpose', 'goal', 'outcome', 'project', 'action']
@@ -2734,6 +2740,7 @@ function TimelinePanel<TLayer extends TimelineLayer>({
   onToday: () => void
 }) {
   const segments = buildTimelineSegments(entries, columns, layerIds)
+  const layerBands = buildTimelineLayerBands(entries, columns, layerIds)
   const laneCount = segments.reduce((maximum, segment) => Math.max(maximum, segment.lane + 1), 0)
   const hasActiveLayer = layerIds.some((layer) => layerFilters[layer])
   const columnMinWidth = columns.length > 13 ? 54 : 78
@@ -2806,6 +2813,18 @@ function TimelinePanel<TLayer extends TimelineLayer>({
         </div>
 
         <div className="timeline-bars" style={barRowStyle}>
+          {layerBands.map((band) => (
+            <span
+              className={`timeline-layer-band layer-${band.layer}`}
+              key={band.layer}
+              style={{
+                gridColumn: `1 / ${columns.length + 1}`,
+                gridRow: `${band.startLane + 1} / ${band.startLane + band.laneCount + 1}`,
+              }}
+            >
+              {getLayer(band.layer).label}
+            </span>
+          ))}
           {segments.map((segment) => {
             const { entry } = segment
             const barStyle = {
@@ -3919,12 +3938,6 @@ function compareTimelineRangeEntries(
   right: CalendarRangeEntry,
   layerOrder: readonly TimelineLayer[],
 ) {
-  const startCompared = left.startDate.localeCompare(right.startDate)
-  if (startCompared !== 0) return startCompared
-
-  const endCompared = left.endDate.localeCompare(right.endDate)
-  if (endCompared !== 0) return endCompared
-
   const leftLayerIndex = layerOrder.indexOf(left.layer)
   const rightLayerIndex = layerOrder.indexOf(right.layer)
   const layerCompared =
@@ -3932,7 +3945,22 @@ function compareTimelineRangeEntries(
     (rightLayerIndex === -1 ? timelineLayerIds.length : rightLayerIndex)
   if (layerCompared !== 0) return layerCompared
 
+  const startCompared = left.startDate.localeCompare(right.startDate)
+  if (startCompared !== 0) return startCompared
+
+  const endCompared = left.endDate.localeCompare(right.endDate)
+  if (endCompared !== 0) return endCompared
+
+  const statusCompared = statusRank(left.item.status) - statusRank(right.item.status)
+  if (statusCompared !== 0) return statusCompared
+
   return left.item.title.localeCompare(right.item.title, 'zh-Hant')
+}
+
+function statusRank(status: Status) {
+  if (status === 'active') return 0
+  if (status === 'not-started') return 1
+  return 2
 }
 
 function getCalendarWeeks(month: string): CalendarWeek[] {
@@ -3954,27 +3982,37 @@ function buildCalendarWeekSegments(entries: CalendarRangeEntry[], weeks: Calenda
   const segments: CalendarBarSegment[] = []
 
   weeks.forEach((week, weekIndex) => {
-    const laneEnds: string[] = []
-    const weekEntries = entries
-      .filter((entry) => rangesOverlap(entry.startDate, entry.endDate, week.startDate, week.endDate))
-      .sort(compareCalendarRangeEntries)
+    let laneOffset = 0
 
-    weekEntries.forEach((entry) => {
-      const segmentStart = maxDate(entry.startDate, week.startDate)
-      const segmentEnd = minDate(entry.endDate, week.endDate)
-      const reusableLane = laneEnds.findIndex((endDate) => endDate < segmentStart)
-      const lane = reusableLane === -1 ? laneEnds.length : reusableLane
+    calendarLayerIds.forEach((layer) => {
+      const laneEnds: string[] = []
+      const weekEntries = entries
+        .filter(
+          (entry) =>
+            entry.layer === layer &&
+            rangesOverlap(entry.startDate, entry.endDate, week.startDate, week.endDate),
+        )
+        .sort(compareCalendarRangeEntries)
 
-      laneEnds[lane] = segmentEnd
-      segments.push({
-        entry,
-        weekIndex,
-        startColumn: daysBetween(week.startDate, segmentStart) + 1,
-        endColumn: daysBetween(week.startDate, segmentEnd) + 1,
-        lane,
-        continuesBefore: entry.startDate < segmentStart,
-        continuesAfter: entry.endDate > segmentEnd,
+      weekEntries.forEach((entry) => {
+        const segmentStart = maxDate(entry.startDate, week.startDate)
+        const segmentEnd = minDate(entry.endDate, week.endDate)
+        const reusableLane = laneEnds.findIndex((endDate) => endDate < segmentStart)
+        const layerLane = reusableLane === -1 ? laneEnds.length : reusableLane
+
+        laneEnds[layerLane] = segmentEnd
+        segments.push({
+          entry,
+          weekIndex,
+          startColumn: daysBetween(week.startDate, segmentStart) + 1,
+          endColumn: daysBetween(week.startDate, segmentEnd) + 1,
+          lane: laneOffset + layerLane,
+          continuesBefore: entry.startDate < segmentStart,
+          continuesAfter: entry.endDate > segmentEnd,
+        })
       })
+
+      laneOffset += Math.max(laneEnds.length, weekEntries.length > 0 ? 1 : 0)
     })
   })
 
@@ -4052,15 +4090,22 @@ function buildTimelineSegments<TLayer extends TimelineLayer>(
   layerOrder: TLayer[],
 ) {
   const segments: TimelineSegment[] = []
-  const laneEnds: string[] = []
   const rangeStart = columns[0]?.startDate
   const rangeEnd = columns[columns.length - 1]?.endDate
   if (!rangeStart || !rangeEnd) return segments
+  let laneOffset = 0
 
-  entries
-    .filter((entry) => rangesOverlap(entry.startDate, entry.endDate, rangeStart, rangeEnd))
-    .sort((left, right) => compareTimelineRangeEntries(left, right, layerOrder))
-    .forEach((entry) => {
+  layerOrder.forEach((layer) => {
+    const laneEnds: string[] = []
+    const layerEntries = entries
+      .filter(
+        (entry) =>
+          entry.layer === layer &&
+          rangesOverlap(entry.startDate, entry.endDate, rangeStart, rangeEnd),
+      )
+      .sort((left, right) => compareTimelineRangeEntries(left, right, layerOrder))
+
+    layerEntries.forEach((entry) => {
       const segmentStart = maxDate(entry.startDate, rangeStart)
       const segmentEnd = minDate(entry.endDate, rangeEnd)
       const startIndex = columns.findIndex((column) => column.endDate >= segmentStart)
@@ -4068,20 +4113,70 @@ function buildTimelineSegments<TLayer extends TimelineLayer>(
       if (startIndex === -1 || endIndex === -1) return
 
       const reusableLane = laneEnds.findIndex((endDate) => endDate < segmentStart)
-      const lane = reusableLane === -1 ? laneEnds.length : reusableLane
+      const layerLane = reusableLane === -1 ? laneEnds.length : reusableLane
 
-      laneEnds[lane] = segmentEnd
+      laneEnds[layerLane] = segmentEnd
       segments.push({
         entry,
         startColumn: startIndex + 1,
         endColumn: endIndex + 1,
-        lane,
+        lane: laneOffset + layerLane,
         continuesBefore: entry.startDate < segmentStart,
         continuesAfter: entry.endDate > segmentEnd,
       })
     })
 
+    laneOffset += Math.max(laneEnds.length, layerEntries.length > 0 ? 1 : 0)
+  })
+
   return segments
+}
+
+function buildTimelineLayerBands<TLayer extends TimelineLayer>(
+  entries: CalendarRangeEntry[],
+  columns: TimelineColumn[],
+  layerOrder: TLayer[],
+) {
+  const bands: TimelineLayerBand[] = []
+  const rangeStart = columns[0]?.startDate
+  const rangeEnd = columns[columns.length - 1]?.endDate
+  if (!rangeStart || !rangeEnd) return bands
+  let laneOffset = 0
+
+  layerOrder.forEach((layer) => {
+    const layerEntries = entries
+      .filter(
+        (entry) =>
+          entry.layer === layer &&
+          rangesOverlap(entry.startDate, entry.endDate, rangeStart, rangeEnd),
+      )
+      .sort((left, right) => compareTimelineRangeEntries(left, right, layerOrder))
+    const laneCount = countLayerLanes(layerEntries)
+
+    if (laneCount > 0) {
+      bands.push({
+        layer,
+        startLane: laneOffset,
+        laneCount,
+      })
+    }
+
+    laneOffset += laneCount
+  })
+
+  return bands
+}
+
+function countLayerLanes(entries: CalendarRangeEntry[]) {
+  const laneEnds: string[] = []
+
+  entries.forEach((entry) => {
+    const reusableLane = laneEnds.findIndex((endDate) => endDate < entry.startDate)
+    const lane = reusableLane === -1 ? laneEnds.length : reusableLane
+    laneEnds[lane] = entry.endDate
+  })
+
+  return laneEnds.length
 }
 
 function getRollingRange(startDate: string, days: number): WeeklyRange {
