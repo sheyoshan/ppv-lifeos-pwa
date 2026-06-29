@@ -203,6 +203,56 @@
   min-width: 0;
 }
 
+.review-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.review-granularity-switch,
+.review-period-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.review-granularity-switch button,
+.review-period-nav button {
+  min-height: 36px;
+  padding: 0 12px;
+}
+
+.review-granularity-switch button {
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+}
+
+.review-granularity-switch button.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.review-period-nav {
+  justify-content: flex-end;
+}
+
+.review-period-nav button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.review-section-list {
+  display: grid;
+  gap: 12px;
+}
+
+.review-section .empty-state {
+  background: var(--surface);
+}
+
 .summary-pill,
 .weekly-metric {
   display: grid;
@@ -2148,6 +2198,14 @@ textarea:focus-visible {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .review-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .review-period-nav {
+    justify-content: flex-start;
+  }
+
   .data-layer-counts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2262,6 +2320,16 @@ textarea:focus-visible {
   .weekly-item-actions,
   .issue-actions {
     grid-column: auto;
+  }
+
+  .review-granularity-switch,
+  .review-period-nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .review-period-nav button {
+    width: 100%;
   }
 
   .weekly-item-actions button,

@@ -34,6 +34,7 @@ type HorizonLayer = Extract<LayerId, 'purpose' | 'goal'>
 type CalendarViewMode = 'month' | 'quarter' | 'horizon'
 type CalendarStatusFilter = 'all' | Status | 'overdue' | 'upcoming'
 type CalendarRiskTone = 'normal' | 'buffer' | 'late' | 'deadline-risk' | 'done'
+type ReviewGranularity = 'week' | 'month' | 'quarter' | 'year'
 
 type LifeItem = {
   id: string
@@ -139,6 +140,10 @@ type WeeklyRange = {
   endDate: string
 }
 
+type ReviewRange = WeeklyRange & {
+  label: string
+}
+
 type WeeklyMetricId =
   | 'completed-actions'
   | 'overdue'
@@ -177,6 +182,33 @@ type WeeklyMetric = {
   id: WeeklyMetricId
   label: string
   items: LifeItem[]
+}
+
+type ReviewMetric = {
+  id: string
+  label: string
+  items: LifeItem[]
+}
+
+type ReviewSummary = {
+  label: string
+  value: number
+  tone: AlignmentSeverity
+}
+
+type ReviewSection = {
+  id: string
+  eyebrow: string
+  title: string
+  items: LifeItem[]
+  emptyLabel: string
+}
+
+type ReviewData = {
+  intro: string
+  summaries: ReviewSummary[]
+  metrics: ReviewMetric[]
+  sections: ReviewSection[]
 }
 
 type AlignmentIssueGroup = {
@@ -365,6 +397,22 @@ const severityLabels: Record<AlignmentSeverity, string> = {
   high: '高',
   medium: '中',
   low: '低',
+}
+
+const reviewGranularityIds: ReviewGranularity[] = ['week', 'month', 'quarter', 'year']
+
+const reviewGranularityLabels: Record<ReviewGranularity, string> = {
+  week: '週',
+  month: '月',
+  quarter: '季',
+  year: '年',
+}
+
+const reviewGranularityNames: Record<ReviewGranularity, string> = {
+  week: '週回顧',
+  month: '月回顧',
+  quarter: '季回顧',
+  year: '年回顧',
 }
 
 const alignmentIssueLabels: Record<AlignmentIssueKind, string> = {
@@ -771,26 +819,34 @@ const encyclopediaSections: EncyclopediaSection[] = [
       {
         id: 'review-cadence',
         eyebrow: '回顧節奏',
-        title: '每日、每週、每月、每季怎麼用',
+        title: '每日、週、月、季、年怎麼用',
         concept: [
           'PPV 的節奏不是每天重寫人生，而是在不同時間尺度看不同層次。',
-          '越底層越常看，越高層越少看，但高層決定底層方向。',
+          '越短週期越看執行，越長週期越看方向。週回顧校準行動，月回顧校準結果，季回顧校準目標，年回顧校準人生架構。',
         ],
         why: [
           '如果每天都在檢查原則，會太重；如果一年才看一次行動，現實早就偏航。',
+          '不同顆粒的回顧要回答不同問題，否則月回顧會變成放大的週回顧，年回顧會變成很長的待辦清單。',
         ],
         practice: [
           '每日：看首頁進行中的結果與行動清單，選出今天最重要的下一步。',
-          '每週：檢查專案與結果，更新狀態、日期與父層連結。',
-          '每月：檢查目標是否有可觀察結果，支柱是否失衡。',
-          '每季：回到目的與原則，判斷方向是否仍然值得。',
+          '每週：檢查行動、專案與結果，更新狀態、日期與父層連結，確保下一步仍在推進結果。',
+          '每月：檢查結果是否交付、目標是否有成果支撐、支柱是否完全沒有推進。',
+          '每季：檢查目標是否仍值得投入，結果組合是否支撐目的，支柱是否長期失衡。',
+          '每年：回到原則、支柱與目的，判斷今年的成果是否真的符合你相信的方向。',
+          '歷史週/月/季/年回顧以目前資料即時計算，不保存當時 snapshot；因此它適合回看成果與期間，不適合還原過去某一天的完整狀態。',
         ],
         mistakes: [
           '每日回顧做得像年度規劃，導致太耗能。',
           '只做行動清單，不做週回顧，最後行動會慢慢和結果斷線。',
+          '把月回顧只做成工作量統計，卻沒有檢查結果是否真正交付。',
+          '年回顧只新增更多目標，卻沒有檢查支柱、目的與原則是否仍然真實。',
         ],
         examples: [
           '週回顧時問：本週完成了哪些行動？它們推進了哪些專案？專案有沒有創造結果？',
+          '月回顧時問：本月真正交付了哪些結果？哪些目標沒有任何成果支撐？',
+          '季回顧時問：這一季的目標是否仍值得投入？下季應該保留、暫停或重寫哪些目標？',
+          '年回顧時問：今年的成果是否保護了我重視的支柱？有沒有新的原則需要被寫下？',
         ],
       },
     ],
@@ -1372,7 +1428,7 @@ function App() {
               onOpen={openItemRelationship}
             />
 
-            <WeeklyAlignmentCenter
+            <ReviewAlignmentCenter
               items={items}
               onCreateAction={(project) => startCreate('action', [project.id])}
               onCreateProject={(outcome) => startCreate('project', [outcome.id])}
@@ -1876,7 +1932,7 @@ function OutcomeFocusList({
   )
 }
 
-function WeeklyAlignmentCenter({
+function ReviewAlignmentCenter({
   items,
   onCreateAction,
   onCreateProject,
@@ -1892,58 +1948,104 @@ function WeeklyAlignmentCenter({
   onToggleActionDone: (item: LifeItem) => void
 }) {
   const [expanded, setExpanded] = useState(false)
-  const [selectedMetricId, setSelectedMetricId] = useState<WeeklyMetricId>('overdue')
+  const [granularity, setGranularity] = useState<ReviewGranularity>('week')
+  const [anchorDate, setAnchorDate] = useState(currentDate())
+  const [selectedMetricId, setSelectedMetricId] = useState('')
   const [selectedIssueKind, setSelectedIssueKind] = useState<AlignmentIssueKind | 'all'>('all')
-  const weekRange = getWeekRange(currentDate())
-  const metrics = getWeeklyMetrics(items, weekRange)
+  const range = getReviewRange(granularity, anchorDate)
+  const currentRange = getReviewRange(granularity, currentDate())
+  const reviewData = getReviewData(items, granularity, range)
   const issues = getAlignmentIssues(items)
   const issueGroups = getAlignmentIssueGroups(issues)
-  const selectedMetric = metrics.find((metric) => metric.id === selectedMetricId) ?? metrics[0]
+  const selectedMetric =
+    reviewData.metrics.find((metric) => metric.id === selectedMetricId) ??
+    reviewData.metrics[0] ??
+    { id: 'empty', label: '回顧項目', items: [] }
   const selectedIssues =
     selectedIssueKind === 'all' ? issues : issues.filter((issue) => issue.kind === selectedIssueKind)
-  const overdueCount = metrics.find((metric) => metric.id === 'overdue')?.items.length ?? 0
-  const unlinkedCount = metrics.find((metric) => metric.id === 'unlinked')?.items.length ?? 0
-  const noActionProjectCount = issues.filter((issue) => issue.kind === 'active-project-without-active-action').length
-  const noProjectOutcomeCount = issues.filter((issue) => issue.kind === 'active-outcome-without-active-project').length
+  const canGoNext = range.startDate < currentRange.startDate
+
+  function changeGranularity(nextGranularity: ReviewGranularity) {
+    setGranularity(nextGranularity)
+    setAnchorDate(currentDate())
+    setSelectedMetricId('')
+    setSelectedIssueKind('all')
+  }
+
+  function shiftReview(direction: -1 | 1) {
+    if (direction === 1 && !canGoNext) return
+    setAnchorDate((current) => shiftReviewAnchor(granularity, current, direction))
+    setSelectedMetricId('')
+    setSelectedIssueKind('all')
+  }
+
+  function returnToCurrentRange() {
+    setAnchorDate(currentDate())
+    setSelectedMetricId('')
+    setSelectedIssueKind('all')
+  }
 
   return (
     <section className="section-block weekly-alignment">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">本週對齊</p>
-          <h2>週回顧與對齊檢查</h2>
+          <p className="eyebrow">回顧與對齊</p>
+          <h2>{reviewGranularityNames[granularity]}與對齊檢查</h2>
         </div>
         <span className="count-pill">
-          {weekRange.startDate} - {weekRange.endDate}
+          {range.startDate} - {range.endDate}
         </span>
       </div>
 
+      <div className="review-toolbar">
+        <div className="review-granularity-switch" aria-label="選擇回顧顆粒">
+          {reviewGranularityIds.map((id) => (
+            <button
+              className={id === granularity ? 'active' : ''}
+              type="button"
+              key={id}
+              onClick={() => changeGranularity(id)}
+            >
+              {reviewGranularityLabels[id]}
+            </button>
+          ))}
+        </div>
+
+        <div className="review-period-nav" aria-label="切換回顧期間">
+          <button type="button" onClick={() => shiftReview(-1)}>
+            上一期
+          </button>
+          <button className="ghost-button" type="button" onClick={returnToCurrentRange}>
+            回到本期
+          </button>
+          <button type="button" onClick={() => shiftReview(1)} disabled={!canGoNext}>
+            下一期
+          </button>
+        </div>
+      </div>
+
       <div className="weekly-summary-grid">
-        <SummaryPill label="逾期" value={overdueCount} tone={overdueCount > 0 ? 'high' : 'low'} />
-        <SummaryPill label="未連結" value={unlinkedCount} tone={unlinkedCount > 0 ? 'medium' : 'low'} />
-        <SummaryPill
-          label="無下一步專案"
-          value={noActionProjectCount}
-          tone={noActionProjectCount > 0 ? 'medium' : 'low'}
-        />
-        <SummaryPill
-          label="無專案結果"
-          value={noProjectOutcomeCount}
-          tone={noProjectOutcomeCount > 0 ? 'medium' : 'low'}
-        />
+        {reviewData.summaries.map((summary) => (
+          <SummaryPill
+            label={summary.label}
+            value={summary.value}
+            tone={summary.tone}
+            key={summary.label}
+          />
+        ))}
       </div>
 
       <div className="weekly-intro">
-        <p className="muted">用本週完成、逾期、即將到期與連結斷點，檢查行動是否真的推進結果。</p>
+        <p className="muted">{reviewData.intro}</p>
         <button type="button" onClick={() => setExpanded((current) => !current)}>
-          {expanded ? '收合週回顧' : '開始週回顧'}
+          {expanded ? `收合${reviewGranularityNames[granularity]}` : `開始${reviewGranularityNames[granularity]}`}
         </button>
       </div>
 
       {expanded && (
         <div className="weekly-review-body">
-          <div className="weekly-metric-grid" aria-label="本週總覽">
-            {metrics.map((metric) => (
+          <div className="weekly-metric-grid" aria-label={`${reviewGranularityNames[granularity]}總覽`}>
+            {reviewData.metrics.map((metric) => (
               <button
                 className={metric.id === selectedMetricId ? 'weekly-metric active' : 'weekly-metric'}
                 type="button"
@@ -1959,7 +2061,7 @@ function WeeklyAlignmentCenter({
           <div className="weekly-detail-panel">
             <div className="weekly-panel-heading">
               <div>
-                <p className="eyebrow">本週總覽</p>
+                <p className="eyebrow">{range.label}</p>
                 <h3>{selectedMetric.label}</h3>
               </div>
               <span className="count-pill">{selectedMetric.items.length} 個</span>
@@ -1973,70 +2075,79 @@ function WeeklyAlignmentCenter({
             />
           </div>
 
-          <div className="weekly-detail-panel">
-            <div className="weekly-panel-heading">
-              <div>
-                <p className="eyebrow">Alignment</p>
-                <h3>對齊斷點</h3>
+          {granularity === 'week' ? (
+            <div className="weekly-detail-panel">
+              <div className="weekly-panel-heading">
+                <div>
+                  <p className="eyebrow">Alignment</p>
+                  <h3>對齊斷點</h3>
+                </div>
+                <span className="count-pill">{issues.length} 個</span>
               </div>
-              <span className="count-pill">{issues.length} 個</span>
-            </div>
 
-            <div className="issue-filter-row" aria-label="對齊斷點分類">
-              <button
-                className={selectedIssueKind === 'all' ? 'active' : ''}
-                type="button"
-                onClick={() => setSelectedIssueKind('all')}
-              >
-                全部 {issues.length}
-              </button>
-              {issueGroups.map((group) => (
+              <div className="issue-filter-row" aria-label="對齊斷點分類">
                 <button
-                  className={selectedIssueKind === group.kind ? 'active' : ''}
+                  className={selectedIssueKind === 'all' ? 'active' : ''}
                   type="button"
-                  key={group.kind}
-                  onClick={() => setSelectedIssueKind(group.kind)}
+                  onClick={() => setSelectedIssueKind('all')}
                 >
-                  {group.label} {group.count}
+                  全部 {issues.length}
                 </button>
-              ))}
-            </div>
+                {issueGroups.map((group) => (
+                  <button
+                    className={selectedIssueKind === group.kind ? 'active' : ''}
+                    type="button"
+                    key={group.kind}
+                    onClick={() => setSelectedIssueKind(group.kind)}
+                  >
+                    {group.label} {group.count}
+                  </button>
+                ))}
+              </div>
 
-            <div className="issue-list">
-              {selectedIssues.length > 0 ? (
-                selectedIssues.map((issue) => (
-                  <article className="issue-row" key={`${issue.kind}-${issue.item.id}`}>
-                    <span className={`severity-pill ${issue.severity}`}>{severityLabels[issue.severity]}</span>
-                    <div>
-                      <strong>{issue.title}</strong>
-                      <p>{issue.description}</p>
-                      <small>{itemMeta(issue.item)}</small>
-                    </div>
-                    <div className="issue-actions">
-                      {issue.createAction && issue.createAction.layer === 'project' && (
-                        <button type="button" onClick={() => onCreateProject(issue.item)}>
-                          {issue.createAction.label}
+              <div className="issue-list">
+                {selectedIssues.length > 0 ? (
+                  selectedIssues.map((issue) => (
+                    <article className="issue-row" key={`${issue.kind}-${issue.item.id}`}>
+                      <span className={`severity-pill ${issue.severity}`}>{severityLabels[issue.severity]}</span>
+                      <div>
+                        <strong>{issue.title}</strong>
+                        <p>{issue.description}</p>
+                        <small>{itemMeta(issue.item)}</small>
+                      </div>
+                      <div className="issue-actions">
+                        {issue.createAction && issue.createAction.layer === 'project' && (
+                          <button type="button" onClick={() => onCreateProject(issue.item)}>
+                            {issue.createAction.label}
+                          </button>
+                        )}
+                        {issue.createAction && issue.createAction.layer === 'action' && (
+                          <button type="button" onClick={() => onCreateAction(issue.item)}>
+                            {issue.createAction.label}
+                          </button>
+                        )}
+                        <button className="ghost-button" type="button" onClick={() => onOpenItem(issue.item)}>
+                          查看關係
                         </button>
-                      )}
-                      {issue.createAction && issue.createAction.layer === 'action' && (
-                        <button type="button" onClick={() => onCreateAction(issue.item)}>
-                          {issue.createAction.label}
+                        <button className="ghost-button" type="button" onClick={() => onEditItem(issue.item)}>
+                          編輯
                         </button>
-                      )}
-                      <button className="ghost-button" type="button" onClick={() => onOpenItem(issue.item)}>
-                        查看關係
-                      </button>
-                      <button className="ghost-button" type="button" onClick={() => onEditItem(issue.item)}>
-                        編輯
-                      </button>
-                    </div>
-                  </article>
-                ))
-              ) : (
-                <EmptyState label="目前沒有符合這個分類的對齊斷點" />
-              )}
+                      </div>
+                    </article>
+                  ))
+                ) : (
+                  <EmptyState label="目前沒有符合這個分類的對齊斷點" />
+                )}
+              </div>
             </div>
-          </div>
+          ) : (
+            <ReviewSectionList
+              allItems={items}
+              sections={reviewData.sections}
+              onEditItem={onEditItem}
+              onOpenItem={onOpenItem}
+            />
+          )}
         </div>
       )}
     </section>
@@ -2062,18 +2173,22 @@ function SummaryPill({
 
 function WeeklyItemList({
   allItems,
+  emptyLabel = '目前沒有符合這個總覽項目的物件',
+  showActionToggle = true,
   items,
   onEditItem,
   onOpenItem,
   onToggleActionDone,
 }: {
   allItems: LifeItem[]
+  emptyLabel?: string
+  showActionToggle?: boolean
   items: LifeItem[]
   onEditItem: (item: LifeItem) => void
   onOpenItem: (item: LifeItem) => void
   onToggleActionDone: (item: LifeItem) => void
 }) {
-  if (items.length === 0) return <EmptyState label="目前沒有符合這個總覽項目的物件" />
+  if (items.length === 0) return <EmptyState label={emptyLabel} />
 
   return (
     <div className="weekly-item-list">
@@ -2088,7 +2203,7 @@ function WeeklyItemList({
             </small>
           </button>
           <div className="weekly-item-actions">
-            {item.layer === 'action' && (
+            {showActionToggle && item.layer === 'action' && (
               <button
                 className={item.status === 'done' ? 'check done' : 'check'}
                 type="button"
@@ -2103,6 +2218,43 @@ function WeeklyItemList({
             </button>
           </div>
         </article>
+      ))}
+    </div>
+  )
+}
+
+function ReviewSectionList({
+  allItems,
+  sections,
+  onEditItem,
+  onOpenItem,
+}: {
+  allItems: LifeItem[]
+  sections: ReviewSection[]
+  onEditItem: (item: LifeItem) => void
+  onOpenItem: (item: LifeItem) => void
+}) {
+  return (
+    <div className="review-section-list">
+      {sections.map((section) => (
+        <div className="weekly-detail-panel review-section" key={section.id}>
+          <div className="weekly-panel-heading">
+            <div>
+              <p className="eyebrow">{section.eyebrow}</p>
+              <h3>{section.title}</h3>
+            </div>
+            <span className="count-pill">{section.items.length} 個</span>
+          </div>
+          <WeeklyItemList
+            items={section.items}
+            allItems={allItems}
+            onEditItem={onEditItem}
+            onOpenItem={onOpenItem}
+            onToggleActionDone={() => undefined}
+            emptyLabel={section.emptyLabel}
+            showActionToggle={false}
+          />
+        </div>
       ))}
     </div>
   )
@@ -3685,6 +3837,225 @@ function compareParentOptions(left: LifeItem, right: LifeItem, selectedIds: Set<
   return updatedCompared === 0 ? left.title.localeCompare(right.title, 'zh-Hant') : updatedCompared
 }
 
+function getReviewData(items: LifeItem[], granularity: ReviewGranularity, range: ReviewRange): ReviewData {
+  if (granularity === 'week') return getWeeklyReviewData(items, range)
+  if (granularity === 'month') return getMonthlyReviewData(items, range)
+  if (granularity === 'quarter') return getQuarterlyReviewData(items, range)
+  return getYearlyReviewData(items, range)
+}
+
+function getWeeklyReviewData(items: LifeItem[], range: ReviewRange): ReviewData {
+  const metrics = getWeeklyMetrics(items, range)
+  const issues = getAlignmentIssues(items)
+  const completedActions = metrics.find((metric) => metric.id === 'completed-actions')?.items.length ?? 0
+  const overdueItems = metrics.find((metric) => metric.id === 'overdue')?.items.length ?? 0
+  const unlinkedItems = metrics.find((metric) => metric.id === 'unlinked')?.items.length ?? 0
+  const noActionProjectCount = issues.filter((issue) => issue.kind === 'active-project-without-active-action').length
+
+  return {
+    intro: '用完成行動、逾期事項、即將到期與連結斷點，檢查行動是否真的推進結果。',
+    summaries: [
+      { label: '完成行動', value: completedActions, tone: completedActions > 0 ? 'low' : 'medium' },
+      { label: '逾期事項', value: overdueItems, tone: overdueItems > 0 ? 'high' : 'low' },
+      { label: '未連結', value: unlinkedItems, tone: unlinkedItems > 0 ? 'medium' : 'low' },
+      { label: '無下一步專案', value: noActionProjectCount, tone: noActionProjectCount > 0 ? 'medium' : 'low' },
+    ],
+    metrics,
+    sections: [],
+  }
+}
+
+function getMonthlyReviewData(items: LifeItem[], range: ReviewRange): ReviewData {
+  const progressByLayer = getProgressByLayer(items, range)
+  const pillarProgress = getProgressByPillar(items, range)
+  const completedResults = progressByLayer.outcome
+  const missedResults = getMissedDueItemsInRange(items, range, ['outcome'])
+  const progressedGoals = getLinkedAncestorsForItems(completedResults, items, 'goal')
+  const noProgressGoals = getOpenItemsWithoutLinkedProgress(items, 'goal', completedResults)
+  const progressedPillars = pillarProgress
+    .filter((progress) => progress.items.length > 0)
+    .map((progress) => progress.pillar)
+    .sort(compareWorkItems)
+  const noOutcomePillars = getOpenItemsWithoutLinkedProgress(items, 'pillar', completedResults)
+  const activeOutcomesWithoutProject = items
+    .filter((item) => item.layer === 'outcome' && item.status === 'active' && !hasChildWithStatus(item, items, 'project', 'active'))
+    .sort(compareWorkItems)
+  const nextMonthRange = getReviewRange('month', shiftReviewAnchor('month', range.startDate, 1))
+  const nextMonthDueResults = getDueItemsInRange(items, nextMonthRange, ['outcome'])
+  const activeProjectsWithoutAction = items
+    .filter((item) => item.layer === 'project' && item.status === 'active' && !hasChildWithStatus(item, items, 'action', 'active'))
+    .sort(compareWorkItems)
+
+  return {
+    intro: '用結果交付、目標推進與支柱平衡，檢查本月執行是否變成可觀察成果。',
+    summaries: [
+      { label: '完成結果', value: completedResults.length, tone: completedResults.length > 0 ? 'low' : 'medium' },
+      { label: '未交付結果', value: missedResults.length, tone: missedResults.length > 0 ? 'high' : 'low' },
+      { label: '無推進目標', value: noProgressGoals.length, tone: noProgressGoals.length > 0 ? 'medium' : 'low' },
+      { label: '無成果支柱', value: noOutcomePillars.length, tone: noOutcomePillars.length > 0 ? 'medium' : 'low' },
+    ],
+    metrics: [
+      { id: 'month-completed-results', label: '本月完成結果', items: completedResults },
+      { id: 'month-missed-results', label: '本月未交付結果', items: missedResults },
+      { id: 'month-progressed-goals', label: '有結果推進的目標', items: progressedGoals },
+      { id: 'month-progressed-pillars', label: '有成果支撐的支柱', items: progressedPillars },
+    ],
+    sections: [
+      {
+        id: 'month-outcome-delivery',
+        eyebrow: '結果交付',
+        title: '完成結果與逾期結果',
+        items: uniqueItems([...completedResults, ...missedResults, ...activeOutcomesWithoutProject]).sort(compareWorkItems),
+        emptyLabel: '本月沒有結果交付或逾期結果。',
+      },
+      {
+        id: 'month-goal-progress',
+        eyebrow: '目標推進',
+        title: '沒有結果推進的目標',
+        items: noProgressGoals,
+        emptyLabel: '目前沒有缺少結果推進的目標。',
+      },
+      {
+        id: 'month-pillar-balance',
+        eyebrow: '支柱平衡',
+        title: '本月有推進或缺少成果的支柱',
+        items: uniqueItems([...progressedPillars, ...noOutcomePillars]).sort(compareWorkItems),
+        emptyLabel: '目前沒有可檢查的支柱資料。',
+      },
+      {
+        id: 'month-next-prep',
+        eyebrow: '下月準備',
+        title: '下月結果與需要下一步的專案',
+        items: uniqueItems([...nextMonthDueResults, ...activeProjectsWithoutAction]).sort(compareWorkItems),
+        emptyLabel: '目前沒有下月應交付結果或缺少下一步的專案。',
+      },
+    ],
+  }
+}
+
+function getQuarterlyReviewData(items: LifeItem[], range: ReviewRange): ReviewData {
+  const progressByLayer = getProgressByLayer(items, range)
+  const completedResults = progressByLayer.outcome
+  const missedResults = getMissedDueItemsInRange(items, range, ['outcome'])
+  const progressedGoals = getLinkedAncestorsForItems(completedResults, items, 'goal')
+  const stalledGoals = getOpenItemsWithoutLinkedProgress(items, 'goal', completedResults)
+  const progressedPurposes = getLinkedAncestorsForItems(completedResults, items, 'purpose')
+  const stalledPurposes = getOpenItemsWithoutLinkedProgress(items, 'purpose', completedResults)
+  const progressedPillars = getLinkedAncestorsForItems(completedResults, items, 'pillar')
+  const allOpenPillars = items.filter((item) => item.layer === 'pillar' && item.status !== 'done')
+  const imbalancedPillars = allOpenPillars
+    .filter((pillar) => !progressedPillars.some((progressed) => progressed.id === pillar.id))
+    .sort(compareWorkItems)
+  const nextQuarterRange = getReviewRange('quarter', shiftReviewAnchor('quarter', range.startDate, 1))
+  const nextQuarterDueItems = getDueItemsInRange(items, nextQuarterRange, ['goal', 'outcome'])
+
+  return {
+    intro: '用目標推進、結果組合、目的對齊與支柱失衡，檢查這一季的策略是否仍值得延續。',
+    summaries: [
+      { label: '推進目標', value: progressedGoals.length, tone: progressedGoals.length > 0 ? 'low' : 'medium' },
+      { label: '停滯目標', value: stalledGoals.length, tone: stalledGoals.length > 0 ? 'medium' : 'low' },
+      { label: '完成結果', value: completedResults.length, tone: completedResults.length > 0 ? 'low' : 'medium' },
+      { label: '失衡支柱', value: imbalancedPillars.length, tone: imbalancedPillars.length > 0 ? 'medium' : 'low' },
+    ],
+    metrics: [
+      { id: 'quarter-progressed-goals', label: '本季推進目標', items: progressedGoals },
+      { id: 'quarter-stalled-goals', label: '停滯目標', items: stalledGoals },
+      { id: 'quarter-completed-results', label: '本季完成結果', items: completedResults },
+      { id: 'quarter-progressed-purposes', label: '有推進目的', items: progressedPurposes },
+    ],
+    sections: [
+      {
+        id: 'quarter-goal-check',
+        eyebrow: '目標檢查',
+        title: '推進目標與停滯目標',
+        items: uniqueItems([...progressedGoals, ...stalledGoals]).sort(compareWorkItems),
+        emptyLabel: '目前沒有可檢查的目標。',
+      },
+      {
+        id: 'quarter-outcome-mix',
+        eyebrow: '結果組合',
+        title: '完成結果與未完成結果',
+        items: uniqueItems([...completedResults, ...missedResults]).sort(compareWorkItems),
+        emptyLabel: '本季沒有完成或逾期結果。',
+      },
+      {
+        id: 'quarter-purpose-alignment',
+        eyebrow: '目的對齊',
+        title: '有推進與長期無推進的目的',
+        items: uniqueItems([...progressedPurposes, ...stalledPurposes]).sort(compareWorkItems),
+        emptyLabel: '目前沒有可檢查的目的。',
+      },
+      {
+        id: 'quarter-next-prep',
+        eyebrow: '下季準備',
+        title: '下季應完成目標與結果',
+        items: nextQuarterDueItems,
+        emptyLabel: '目前沒有下季應完成的目標或結果。',
+      },
+    ],
+  }
+}
+
+function getYearlyReviewData(items: LifeItem[], range: ReviewRange): ReviewData {
+  const progressByLayer = getProgressByLayer(items, range)
+  const completedResults = progressByLayer.outcome
+  const completedGoals = progressByLayer.goal
+  const progressedPillars = getLinkedAncestorsForItems(completedResults, items, 'pillar')
+  const inactivePillars = getOpenItemsWithoutLinkedProgress(items, 'pillar', completedResults)
+  const progressedPurposes = getLinkedAncestorsForItems(completedResults, items, 'purpose')
+  const inactivePurposes = getOpenItemsWithoutLinkedProgress(items, 'purpose', completedResults)
+  const supportedPrinciples = getLinkedAncestorsForItems(completedResults, items, 'principle')
+  const nextYearRange = getReviewRange('year', shiftReviewAnchor('year', range.startDate, 1))
+  const nextYearDueGoals = getDueItemsInRange(items, nextYearRange, ['goal'])
+  const activeGoalsWithoutResults = getOpenItemsWithoutLinkedProgress(items, 'goal', completedResults)
+
+  return {
+    intro: '用年度成果、支柱承重、目的檢查與原則校準，檢查整體人生架構是否仍符合真正相信的方向。',
+    summaries: [
+      { label: '完成結果', value: completedResults.length, tone: completedResults.length > 0 ? 'low' : 'medium' },
+      { label: '完成目標', value: completedGoals.length, tone: completedGoals.length > 0 ? 'low' : 'medium' },
+      { label: '推進支柱', value: progressedPillars.length, tone: progressedPillars.length > 0 ? 'low' : 'medium' },
+      { label: '無推進支柱', value: inactivePillars.length, tone: inactivePillars.length > 0 ? 'medium' : 'low' },
+    ],
+    metrics: [
+      { id: 'year-completed-results', label: '年度完成結果', items: completedResults },
+      { id: 'year-completed-goals', label: '年度完成目標', items: completedGoals },
+      { id: 'year-progressed-pillars', label: '有推進支柱', items: progressedPillars },
+      { id: 'year-supported-principles', label: '被成果支持的原則', items: supportedPrinciples },
+    ],
+    sections: [
+      {
+        id: 'year-outcome-map',
+        eyebrow: '年度成果地圖',
+        title: '按成果回看年度推進',
+        items: completedResults,
+        emptyLabel: '本年度尚未完成結果。',
+      },
+      {
+        id: 'year-pillar-load',
+        eyebrow: '支柱承重',
+        title: '有推進與長期無推進的支柱',
+        items: uniqueItems([...progressedPillars, ...inactivePillars]).sort(compareWorkItems),
+        emptyLabel: '目前沒有可檢查的支柱。',
+      },
+      {
+        id: 'year-purpose-check',
+        eyebrow: '目的檢查',
+        title: '有成果支撐與失去推進的目的',
+        items: uniqueItems([...progressedPurposes, ...inactivePurposes]).sort(compareWorkItems),
+        emptyLabel: '目前沒有可檢查的目的。',
+      },
+      {
+        id: 'year-next-prep',
+        eyebrow: '明年準備',
+        title: '明年目標與缺少結果的目標',
+        items: uniqueItems([...nextYearDueGoals, ...activeGoalsWithoutResults]).sort(compareWorkItems),
+        emptyLabel: '目前沒有明年應完成目標或缺少結果的目標。',
+      },
+    ],
+  }
+}
+
 function getWeeklyMetrics(items: LifeItem[], weekRange: WeeklyRange): WeeklyMetric[] {
   const completedActions = items
     .filter(
@@ -3694,7 +4065,9 @@ function getWeeklyMetrics(items: LifeItem[], weekRange: WeeklyRange): WeeklyMetr
         isDateInRange(item.completedDate, weekRange),
     )
     .sort(compareWorkItems)
-  const overdueItems = items.filter((item) => isOverdue(item)).sort(compareWorkItems)
+  const overdueItems = isDateInRange(currentDate(), weekRange)
+    ? items.filter((item) => isOverdue(item)).sort(compareWorkItems)
+    : getMissedDueItemsInRange(items, weekRange)
   const unlinkedItems = items
     .filter((item) => Boolean(getLayer(item.layer).parent) && item.parentIds.length === 0)
     .sort(compareWorkItems)
@@ -3714,6 +4087,107 @@ function getWeeklyMetrics(items: LifeItem[], weekRange: WeeklyRange): WeeklyMetr
     { id: 'active-outcomes', label: '進行中結果', items: activeOutcomes },
     { id: 'active-projects', label: '進行中專案', items: activeProjects },
   ]
+}
+
+function getCompletedItemsInRange(items: LifeItem[], range: WeeklyRange, layerFilter?: LayerId[]) {
+  return items
+    .filter(
+      (item) =>
+        (!layerFilter || layerFilter.includes(item.layer)) &&
+        item.status === 'done' &&
+        isDateInRange(item.completedDate, range),
+    )
+    .sort(compareWorkItems)
+}
+
+function getDueItemsInRange(items: LifeItem[], range: WeeklyRange, layerFilter?: LayerId[]) {
+  return items
+    .filter(
+      (item) =>
+        (!layerFilter || layerFilter.includes(item.layer)) &&
+        Boolean(item.dueDate) &&
+        isDateInRange(item.dueDate, range),
+    )
+    .sort(compareWorkItems)
+}
+
+function getMissedDueItemsInRange(items: LifeItem[], range: WeeklyRange, layerFilter?: LayerId[]) {
+  return items
+    .filter(
+      (item) =>
+        (!layerFilter || layerFilter.includes(item.layer)) &&
+        item.status !== 'done' &&
+        Boolean(item.dueDate) &&
+        item.dueDate < currentDate() &&
+        isDateInRange(item.dueDate, range),
+    )
+    .sort(compareWorkItems)
+}
+
+function getProgressByLayer(items: LifeItem[], range: WeeklyRange) {
+  return Object.fromEntries(
+    layers.map((layer) => [
+      layer.id,
+      getCompletedItemsInRange(items, range, [layer.id]),
+    ]),
+  ) as Record<LayerId, LifeItem[]>
+}
+
+function getProgressByPillar(items: LifeItem[], range: WeeklyRange) {
+  const completedWork = getCompletedItemsInRange(items, range, ['outcome', 'project', 'action'])
+
+  return items
+    .filter((item) => item.layer === 'pillar')
+    .map((pillar) => ({
+      pillar,
+      items: completedWork.filter((item) =>
+        getLinkedAncestorsByLayer(item, items, 'pillar').some((ancestor) => ancestor.id === pillar.id),
+      ),
+    }))
+}
+
+function getLinkedAncestorsByLayer(
+  item: LifeItem,
+  items: LifeItem[],
+  layer: LayerId,
+  visitedIds: Set<string> = new Set(),
+): LifeItem[] {
+  return item.parentIds.flatMap((parentId) => {
+    if (visitedIds.has(parentId)) return []
+
+    const parent = items.find((candidate) => candidate.id === parentId)
+    if (!parent) return []
+
+    const nextVisited = new Set([...visitedIds, parentId])
+    const ancestors = getLinkedAncestorsByLayer(parent, items, layer, nextVisited)
+    return parent.layer === layer ? [parent, ...ancestors] : ancestors
+  })
+}
+
+function getLinkedAncestorsForItems(itemsToTrace: LifeItem[], allItems: LifeItem[], layer: LayerId) {
+  return uniqueItems(
+    itemsToTrace.flatMap((item) => getLinkedAncestorsByLayer(item, allItems, layer)),
+  ).sort(compareWorkItems)
+}
+
+function getOpenItemsWithoutLinkedProgress(
+  items: LifeItem[],
+  layer: LayerId,
+  progressItems: LifeItem[],
+) {
+  return items
+    .filter((item) => item.layer === layer && item.status !== 'done')
+    .filter(
+      (item) =>
+        !progressItems.some((progressItem) =>
+          getLinkedAncestorsByLayer(progressItem, items, layer).some((ancestor) => ancestor.id === item.id),
+        ),
+    )
+    .sort(compareWorkItems)
+}
+
+function uniqueItems(items: LifeItem[]) {
+  return Array.from(new Map(items.map((item) => [item.id, item])).values())
 }
 
 function getAlignmentIssues(items: LifeItem[]): AlignmentIssue[] {
@@ -3912,6 +4386,56 @@ function getWeekRange(date: string): WeeklyRange {
     startDate: formatLocalDate(weekStart),
     endDate: formatLocalDate(weekEnd),
   }
+}
+
+function getReviewRange(granularity: ReviewGranularity, anchorDate: string): ReviewRange {
+  if (granularity === 'week') {
+    const range = getWeekRange(anchorDate)
+    return {
+      ...range,
+      label: `${range.startDate} - ${range.endDate}`,
+    }
+  }
+
+  if (granularity === 'month') {
+    const startDate = getMonthKey(anchorDate)
+    return {
+      startDate,
+      endDate: getMonthEnd(startDate),
+      label: formatMonthLabel(startDate),
+    }
+  }
+
+  if (granularity === 'quarter') {
+    const target = parseLocalDate(anchorDate)
+    const year = target.getFullYear()
+    const quarterIndex = Math.floor(target.getMonth() / 3)
+    const start = new Date(year, quarterIndex * 3, 1)
+    const end = new Date(year, quarterIndex * 3 + 3, 0)
+
+    return {
+      startDate: formatLocalDate(start),
+      endDate: formatLocalDate(end),
+      label: `${year} Q${quarterIndex + 1}`,
+    }
+  }
+
+  const year = anchorDate.slice(0, 4)
+  return {
+    startDate: `${year}-01-01`,
+    endDate: `${year}-12-31`,
+    label: `${year} 年`,
+  }
+}
+
+function shiftReviewAnchor(granularity: ReviewGranularity, anchorDate: string, direction: -1 | 1) {
+  if (granularity === 'week') return addDays(anchorDate, direction * 7)
+  if (granularity === 'month') return shiftMonth(getMonthKey(anchorDate), direction)
+  if (granularity === 'quarter') return shiftMonth(getMonthKey(anchorDate), direction * 3)
+
+  const target = parseLocalDate(anchorDate)
+  target.setFullYear(target.getFullYear() + direction)
+  return formatLocalDate(target)
 }
 
 function isDateInRange(date: string, range: WeeklyRange) {
