@@ -35,6 +35,7 @@ type CalendarViewMode = 'month' | 'quarter' | 'horizon'
 type CalendarStatusFilter = 'all' | Status | 'overdue' | 'upcoming'
 type CalendarRiskTone = 'normal' | 'buffer' | 'late' | 'deadline-risk' | 'done'
 type ReviewGranularity = 'week' | 'month' | 'quarter' | 'year'
+type ArchiveMode = 'actions' | 'projects-actions'
 
 type LifeItem = {
   id: string
@@ -268,6 +269,46 @@ type ImportAnalysisResult = {
   preview: ImportPreview
 }
 
+type ArchiveCandidateResult = {
+  projects: LifeItem[]
+  actions: LifeItem[]
+  protectedActionCount: number
+}
+
+type ArchiveImpactSummary = {
+  projectCount: number
+  actionCount: number
+  retainedPillars: number
+  retainedGoals: number
+  retainedOutcomes: number
+  protectedActionCount: number
+  estimatedBytesBefore: number
+  estimatedBytesAfter: number
+  estimatedBytesReduction: number
+}
+
+type ArchivePreview = ArchiveCandidateResult & {
+  mode: ArchiveMode
+  createdAt: string
+  items: LifeItem[]
+  itemIds: string[]
+  impact: ArchiveImpactSummary
+}
+
+type ArchiveExportPayload = {
+  version: 3
+  exportedAt: string
+  archive: {
+    mode: ArchiveMode
+    label: string
+    itemCount: number
+    projectCount: number
+    actionCount: number
+    removedFromMainData: false
+  }
+  items: LifeItem[]
+}
+
 type ItemInput = Partial<LifeItem> & Record<string, unknown>
 
 type AncestorNode = {
@@ -310,6 +351,8 @@ type EncyclopediaSection = {
 
 const STORAGE_KEY = 'ppv-lifeos-data-v1'
 const MAP_PREFERENCES_KEY = 'ppv-lifeos-map-preferences-v1'
+const ACTION_ARCHIVE_DAYS = 90
+const PROJECT_ARCHIVE_DAYS = 180
 
 const layers: Array<{
   id: LayerId
@@ -398,6 +441,11 @@ const calendarStatusFilterLabels: Record<CalendarStatusFilter, string> = {
   done: '完成',
   overdue: '逾期',
   upcoming: '7天內',
+}
+
+const archiveModeLabels: Record<ArchiveMode, string> = {
+  actions: '完成行動',
+  'projects-actions': '完成專案與行動',
 }
 
 const calendarViewModeLabels: Record<CalendarViewMode, { label: string; eyebrow: string; description: string }> = {
@@ -900,6 +948,9 @@ const encyclopediaSections: EncyclopediaSection[] = [
           '行動封存候選可用保守標準：已完成、有完成日期、完成超過 90 天。',
           '專案封存候選可用保守標準：已完成、有完成日期、完成超過 180 天，且底下沒有未完成行動。',
           '封存前先確認相關結果仍留在主資料中，並確認專案底下沒有仍需要推進的行動。',
+          '封存匯出採四步驟：先看封存預覽，先匯出完整備份，再匯出封存檔，最後才從主資料移除封存物件。',
+          '封存完成專案時，只會一併移除完全隸屬於封存專案的已完成行動；如果行動也連到其他未封存專案，會保留在主資料。',
+          '保留的多父層行動會移除指向封存專案的父層連結，避免主資料保留遺失連結。',
           '匯入資料前先看預覽。確認匯入檔案的版本、有效物件數、無效物件數與各層分布，再決定是否取代目前資料。',
           '取代匯入前一定先匯出目前資料。瀏覽器本機資料一旦被取代，就應該靠這份備份檔回復，而不是期待 app 自動保留上一版。',
         ],
@@ -908,12 +959,14 @@ const encyclopediaSections: EncyclopediaSection[] = [
           '只因為總物件數變多就急著清理，而沒有先看膨脹來源是否其實集中在完成行動。',
           '封存專案前沒有檢查底下未完成行動，造成執行承諾被藏到歷史檔案中。',
           '把封存當成刪除。封存應該是把歷史流水移到備份檔，而不是讓人生紀錄消失。',
+          '封存後還期待週/月/季/年回顧完整顯示已移出的行動與專案。第一版回顧仍只看主資料，因此封存會讓舊期間的執行細節變少。',
           '看到匯入檔案名稱正確就直接覆蓋。檔案可能是舊備份、測試資料或部分匯出，應該先看預覽數字再取代。',
         ],
         examples: [
           '如果系統有 1,200 個物件，其中原則到結果只有 250 個，行動有 800 個且 650 個已完成，真正需要控管的是完成行動。',
           '如果某個結果已完成，但它代表一季的重要交付成果，建議保留結果本身；只把底下很舊的完成行動列為封存候選。',
           '如果 JSON 大小接近 5 MB，且已完成行動超過數千筆，可以先匯出完整備份，再考慮未來使用封存功能整理執行流水。',
+          '如果一個完成行動同時連到兩個專案，其中一個專案要封存、另一個仍留在主資料，該行動會被保留，避免另一條專案脈絡斷掉。',
           '如果匯入預覽顯示目前本機有 900 個物件、匯入檔案只有 40 個物件，先停下來確認這是不是你真的要恢復的資料，而不是誤選小型測試檔。',
         ],
       },
@@ -1076,6 +1129,9 @@ function App() {
   const [activeEncyclopediaId, setActiveEncyclopediaId] = useState(firstEncyclopediaArticleId)
   const [pendingImportPreview, setPendingImportPreview] = useState<ImportPreview | null>(null)
   const [importBackupConfirmed, setImportBackupConfirmed] = useState(false)
+  const [archivePreview, setArchivePreview] = useState<ArchivePreview | null>(null)
+  const [archiveBackupConfirmed, setArchiveBackupConfirmed] = useState(false)
+  const [archiveFileExported, setArchiveFileExported] = useState(false)
   const [notice, setNotice] = useState('資料只保存在這台裝置的瀏覽器中。')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -1382,13 +1438,7 @@ function App() {
       exportedAt: new Date().toISOString(),
       items,
     }
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `ppv-lifeos-${currentDate()}.json`
-    link.click()
-    URL.revokeObjectURL(url)
+    downloadJsonFile(payload, `ppv-lifeos-${currentDate()}.json`)
     setNotice('已匯出 JSON，可存到 iPhone「檔案」。')
   }
 
@@ -1413,6 +1463,7 @@ function App() {
     setDraft(emptyDraft(activeLayer))
     setPanelMode('create')
     setNotice(`已取代目前資料，匯入 ${pendingImportPreview.validItemCount} 個有效物件。`)
+    resetArchivePreview()
     resetImportPreview()
   }
 
@@ -1434,6 +1485,71 @@ function App() {
       }
     }
     reader.readAsText(file)
+  }
+
+  function createArchivePreview(mode: ArchiveMode) {
+    const preview = buildArchivePreview(items, mode)
+    setArchivePreview(preview)
+    setArchiveBackupConfirmed(false)
+    setArchiveFileExported(false)
+    setNotice(
+      preview.items.length > 0
+        ? `已建立封存預覽：${archiveModeLabels[mode]}。`
+        : `目前沒有符合條件的${archiveModeLabels[mode]}封存候選。`,
+    )
+  }
+
+  function exportFullBackupBeforeArchive() {
+    exportJson()
+    setArchiveBackupConfirmed(true)
+    setNotice('已匯出完整備份，可以繼續匯出封存檔。')
+  }
+
+  function exportArchiveFile() {
+    if (!archivePreview || !archiveBackupConfirmed || archivePreview.items.length === 0) return
+
+    exportArchiveJson(archivePreview)
+    setArchiveFileExported(true)
+    setNotice(`已匯出封存檔：${archiveModeLabels[archivePreview.mode]}。`)
+  }
+
+  function resetArchivePreview() {
+    setArchivePreview(null)
+    setArchiveBackupConfirmed(false)
+    setArchiveFileExported(false)
+  }
+
+  function confirmRemoveArchivedItems() {
+    if (
+      !archivePreview ||
+      !archiveBackupConfirmed ||
+      !archiveFileExported ||
+      archivePreview.items.length === 0
+    ) {
+      return
+    }
+
+    const archivedIds = new Set(archivePreview.itemIds)
+    const removedCount = archivePreview.items.length
+    setItems((current) => removeArchivedItems(current, archivePreview))
+
+    if (selectedItemId && archivedIds.has(selectedItemId)) {
+      setSelectedItemId('')
+      setPanelMode('create')
+    }
+
+    if (editingId && archivedIds.has(editingId)) {
+      setEditingId(null)
+      setDraft(emptyDraft(activeLayer))
+      setPanelMode('create')
+    }
+
+    if (selectedCalendarItemId && archivedIds.has(selectedCalendarItemId)) {
+      setSelectedCalendarItemId('')
+    }
+
+    setNotice(`已從主資料移除 ${removedCount} 個封存物件。`)
+    resetArchivePreview()
   }
 
   return (
@@ -1736,7 +1852,19 @@ function App() {
               onArticleChange={setActiveEncyclopediaId}
             />
 
-            <DataStatusPanel items={items} />
+            <DataStatusPanel items={items} onPreviewArchive={createArchivePreview} />
+
+            {archivePreview && (
+              <ArchivePreviewPanel
+                backupConfirmed={archiveBackupConfirmed}
+                fileExported={archiveFileExported}
+                preview={archivePreview}
+                onBackup={exportFullBackupBeforeArchive}
+                onCancel={resetArchivePreview}
+                onExportArchive={exportArchiveFile}
+                onRemove={confirmRemoveArchivedItems}
+              />
+            )}
           </section>
         )}
       </main>
@@ -2618,7 +2746,13 @@ function EncyclopediaArticlePart({
   )
 }
 
-function DataStatusPanel({ items }: { items: LifeItem[] }) {
+function DataStatusPanel({
+  items,
+  onPreviewArchive,
+}: {
+  items: LifeItem[]
+  onPreviewArchive: (mode: ArchiveMode) => void
+}) {
   const status = getDataStatus(items)
 
   return (
@@ -2675,6 +2809,14 @@ function DataStatusPanel({ items }: { items: LifeItem[] }) {
           <div className="archive-candidate-grid">
             <DataStatusCard label="可封存行動" value={formatCount(status.archiveCandidates.actions)} />
             <DataStatusCard label="可封存專案" value={formatCount(status.archiveCandidates.projects)} />
+          </div>
+          <div className="archive-preview-controls">
+            <button type="button" onClick={() => onPreviewArchive('actions')}>
+              預覽完成行動
+            </button>
+            <button className="ghost-button" type="button" onClick={() => onPreviewArchive('projects-actions')}>
+              預覽專案與行動
+            </button>
           </div>
         </section>
       </div>
@@ -2748,6 +2890,95 @@ function ImportPreviewPanel({
       )}
       {preview.validItemCount === 0 && (
         <p className="import-backup-note">此檔案沒有可匯入的有效物件。</p>
+      )}
+    </section>
+  )
+}
+
+function ArchivePreviewPanel({
+  backupConfirmed,
+  fileExported,
+  preview,
+  onBackup,
+  onCancel,
+  onExportArchive,
+  onRemove,
+}: {
+  backupConfirmed: boolean
+  fileExported: boolean
+  preview: ArchivePreview
+  onBackup: () => void
+  onCancel: () => void
+  onExportArchive: () => void
+  onRemove: () => void
+}) {
+  const hasItems = preview.items.length > 0
+  const canExportArchive = backupConfirmed && hasItems
+  const canRemove = backupConfirmed && fileExported && hasItems
+
+  return (
+    <section className="section-block import-preview-panel archive-preview-panel">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">封存匯出預覽</p>
+          <h2>{archiveModeLabels[preview.mode]}</h2>
+        </div>
+        <span className="count-pill">{formatCount(preview.items.length)} 個候選物件</span>
+      </div>
+
+      <div className="import-validity-grid archive-impact-grid">
+        <DataStatusCard label="將移除專案" value={formatCount(preview.impact.projectCount)} />
+        <DataStatusCard label="將移除行動" value={formatCount(preview.impact.actionCount)} />
+        <DataStatusCard label="JSON 估算減少" value={formatBytes(preview.impact.estimatedBytesReduction)} />
+      </div>
+
+      <div className="import-summary-compare">
+        <div className="data-summary-card">
+          <h3>仍留在主資料的脈絡</h3>
+          <div className="data-summary-grid">
+            <DataStatusRow label="支柱" value={formatCount(preview.impact.retainedPillars)} />
+            <DataStatusRow label="目標" value={formatCount(preview.impact.retainedGoals)} />
+            <DataStatusRow label="結果" value={formatCount(preview.impact.retainedOutcomes)} />
+          </div>
+        </div>
+        <div className="data-summary-card">
+          <h3>保護規則</h3>
+          <div className="data-summary-grid">
+            <DataStatusRow
+              label="多父層行動保留"
+              value={formatCount(preview.impact.protectedActionCount)}
+            />
+            <DataStatusRow label="封存前大小" value={formatBytes(preview.impact.estimatedBytesBefore)} />
+            <DataStatusRow label="封存後大小" value={formatBytes(preview.impact.estimatedBytesAfter)} />
+          </div>
+        </div>
+      </div>
+
+      <p className="import-warning">
+        封存會先匯出歷史流水，再從主資料移除候選物件。結果、目標、支柱與更上層資料會保留在主資料中；保留的多父層行動會移除指向封存專案的父層連結。
+      </p>
+
+      <div className="import-preview-actions archive-preview-actions">
+        <button type="button" onClick={onBackup}>
+          匯出完整備份
+        </button>
+        <button type="button" onClick={onExportArchive} disabled={!canExportArchive}>
+          匯出封存檔
+        </button>
+        <button className="ghost-button" type="button" onClick={onCancel}>
+          取消
+        </button>
+        <button className="danger-button" type="button" onClick={onRemove} disabled={!canRemove}>
+          從主資料移除封存物件
+        </button>
+      </div>
+
+      {!hasItems && <p className="import-backup-note">目前沒有符合條件的封存候選。</p>}
+      {hasItems && !backupConfirmed && (
+        <p className="import-backup-note">請先匯出完整備份，再匯出封存檔。</p>
+      )}
+      {hasItems && backupConfirmed && !fileExported && (
+        <p className="import-backup-note">請先匯出封存檔，才可從主資料移除候選物件。</p>
       )}
     </section>
   )
@@ -3736,6 +3967,160 @@ function getDataSummary(items: LifeItem[]): DataSummary {
   }
 }
 
+function buildArchivePreview(items: LifeItem[], mode: ArchiveMode): ArchivePreview {
+  const candidates = getArchiveCandidates(items, mode)
+  const archiveItems = uniqueItems([...candidates.projects, ...candidates.actions]).sort(compareArchiveItems)
+  const itemIds = archiveItems.map((item) => item.id)
+
+  return {
+    mode,
+    createdAt: new Date().toISOString(),
+    ...candidates,
+    items: archiveItems,
+    itemIds,
+    impact: getArchiveImpactSummary(items, {
+      ...candidates,
+      items: archiveItems,
+      itemIds,
+    }),
+  }
+}
+
+function getArchiveCandidates(items: LifeItem[], mode: ArchiveMode): ArchiveCandidateResult {
+  if (mode === 'actions') {
+    return {
+      projects: [],
+      actions: getSafeActionArchiveItems(items),
+      protectedActionCount: 0,
+    }
+  }
+
+  return getSafeProjectArchiveItems(items)
+}
+
+function getSafeActionArchiveItems(items: LifeItem[]) {
+  const actionCutoff = addDays(currentDate(), -ACTION_ARCHIVE_DAYS)
+
+  return items
+    .filter(
+      (item) =>
+        item.layer === 'action' &&
+        item.status === 'done' &&
+        Boolean(item.completedDate) &&
+        item.completedDate <= actionCutoff,
+    )
+    .sort(compareArchiveItems)
+}
+
+function getSafeProjectArchiveItems(items: LifeItem[]): ArchiveCandidateResult {
+  const projectCutoff = addDays(currentDate(), -PROJECT_ARCHIVE_DAYS)
+  const projects = items
+    .filter((item) => {
+      if (
+        item.layer !== 'project' ||
+        item.status !== 'done' ||
+        !item.completedDate ||
+        item.completedDate > projectCutoff
+      ) {
+        return false
+      }
+
+      return !items.some(
+        (candidate) =>
+          candidate.layer === 'action' &&
+          candidate.status !== 'done' &&
+          candidate.parentIds.includes(item.id),
+      )
+    })
+    .sort(compareArchiveItems)
+
+  const projectIds = new Set(projects.map((project) => project.id))
+  const linkedDoneActions = items.filter(
+    (item) =>
+      item.layer === 'action' &&
+      item.status === 'done' &&
+      item.parentIds.some((parentId) => projectIds.has(parentId)),
+  )
+  const actions = linkedDoneActions
+    .filter((item) => item.parentIds.length > 0 && item.parentIds.every((parentId) => projectIds.has(parentId)))
+    .sort(compareArchiveItems)
+  const archivedActionIds = new Set(actions.map((action) => action.id))
+  const protectedActionCount = linkedDoneActions.filter((item) => !archivedActionIds.has(item.id)).length
+
+  return { projects, actions, protectedActionCount }
+}
+
+function getArchiveImpactSummary(
+  items: LifeItem[],
+  archive: ArchiveCandidateResult & { items: LifeItem[]; itemIds: string[] },
+): ArchiveImpactSummary {
+  const remainingItems = removeArchivedItems(items, archive)
+
+  return {
+    projectCount: archive.projects.length,
+    actionCount: archive.actions.length,
+    retainedPillars: remainingItems.filter((item) => item.layer === 'pillar').length,
+    retainedGoals: remainingItems.filter((item) => item.layer === 'goal').length,
+    retainedOutcomes: remainingItems.filter((item) => item.layer === 'outcome').length,
+    protectedActionCount: archive.protectedActionCount,
+    estimatedBytesBefore: estimateJsonSize(items),
+    estimatedBytesAfter: estimateJsonSize(remainingItems),
+    estimatedBytesReduction: Math.max(0, estimateJsonSize(items) - estimateJsonSize(remainingItems)),
+  }
+}
+
+function exportArchiveJson(preview: ArchivePreview) {
+  const payload: ArchiveExportPayload = {
+    version: 3,
+    exportedAt: new Date().toISOString(),
+    archive: {
+      mode: preview.mode,
+      label: archiveModeLabels[preview.mode],
+      itemCount: preview.items.length,
+      projectCount: preview.projects.length,
+      actionCount: preview.actions.length,
+      removedFromMainData: false,
+    },
+    items: preview.items,
+  }
+  const filename =
+    preview.mode === 'actions'
+      ? `ppv-lifeos-archive-actions-${currentDate()}.json`
+      : `ppv-lifeos-archive-projects-actions-${currentDate()}.json`
+
+  downloadJsonFile(payload, filename)
+}
+
+function removeArchivedItems(
+  items: LifeItem[],
+  archive: { itemIds: string[] },
+) {
+  const archivedIds = new Set(archive.itemIds)
+  return items
+    .filter((item) => !archivedIds.has(item.id))
+    .map((item) => {
+      const parentIds = item.parentIds.filter((parentId) => !archivedIds.has(parentId))
+      return parentIds.length === item.parentIds.length
+        ? item
+        : {
+            ...item,
+            parentIds,
+            updatedDate: currentDate(),
+          }
+    })
+}
+
+function compareArchiveItems(left: LifeItem, right: LifeItem) {
+  const layerOrder = ['project', 'action']
+  const layerDiff = layerOrder.indexOf(left.layer) - layerOrder.indexOf(right.layer)
+  if (layerDiff !== 0) return layerDiff
+
+  const dateDiff = left.completedDate.localeCompare(right.completedDate)
+  if (dateDiff !== 0) return dateDiff
+
+  return left.title.localeCompare(right.title, 'zh-Hant')
+}
+
 function getDataStatus(items: LifeItem[]): DataStatus {
   const coreCounts = Object.fromEntries(layers.map((layer) => [layer.id, 0])) as Record<LayerId, number>
 
@@ -3769,38 +4154,24 @@ function estimateJsonSize(items: LifeItem[]) {
   return new Blob([JSON.stringify({ version: 3, items })]).size
 }
 
+function downloadJsonFile(payload: unknown, filename: string) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
 function getArchiveCandidateCounts(items: LifeItem[]) {
-  const today = currentDate()
-  const actionCutoff = addDays(today, -90)
-  const projectCutoff = addDays(today, -180)
+  const actionCandidates = getArchiveCandidates(items, 'actions')
+  const projectCandidates = getArchiveCandidates(items, 'projects-actions')
 
-  const actions = items.filter(
-    (item) =>
-      item.layer === 'action' &&
-      item.status === 'done' &&
-      Boolean(item.completedDate) &&
-      item.completedDate <= actionCutoff,
-  ).length
-
-  const projects = items.filter((item) => {
-    if (
-      item.layer !== 'project' ||
-      item.status !== 'done' ||
-      !item.completedDate ||
-      item.completedDate > projectCutoff
-    ) {
-      return false
-    }
-
-    return !items.some(
-      (candidate) =>
-        candidate.layer === 'action' &&
-        candidate.status !== 'done' &&
-        candidate.parentIds.includes(item.id),
-    )
-  }).length
-
-  return { actions, projects }
+  return {
+    actions: actionCandidates.actions.length,
+    projects: projectCandidates.projects.length,
+  }
 }
 
 function formatBytes(bytes: number) {

@@ -1998,6 +1998,30 @@ textarea {
   opacity: 0.48;
 }
 
+.archive-preview-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.archive-preview-controls button {
+  flex: 1;
+  min-width: 150px;
+}
+
+.archive-preview-panel {
+  border-color: var(--risk-medium-border);
+}
+
+.archive-impact-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.archive-preview-actions {
+  align-items: stretch;
+}
+
 .data-status-summary,
 .execution-status-grid,
 .archive-candidate-grid {
@@ -2413,6 +2437,10 @@ textarea:focus-visible {
   }
 
   .import-preview-actions button {
+    width: 100%;
+  }
+
+  .archive-preview-controls button {
     width: 100%;
   }
 
