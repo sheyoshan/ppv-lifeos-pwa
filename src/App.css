@@ -1913,6 +1913,91 @@ textarea {
   gap: 16px;
 }
 
+.import-preview-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.import-file-meta,
+.import-summary-compare,
+.import-validity-grid,
+.data-summary-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.import-file-meta {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.import-summary-compare {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.import-validity-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.import-meta-item,
+.data-summary-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--field);
+  padding: 12px;
+}
+
+.import-meta-item span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.import-meta-item strong {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.data-summary-card h3 {
+  margin: 0 0 10px;
+  color: var(--ink);
+  font-size: 16px;
+}
+
+.import-warning,
+.import-backup-note {
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.import-warning {
+  border: 1px solid var(--risk-medium-border);
+  background: var(--risk-medium-bg);
+  color: var(--risk-medium-text);
+}
+
+.import-backup-note {
+  border: 1px solid var(--border);
+  background: var(--field);
+  color: var(--muted);
+}
+
+.import-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.import-preview-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
 .data-status-summary,
 .execution-status-grid,
 .archive-candidate-grid {
@@ -2210,6 +2295,14 @@ textarea:focus-visible {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .import-file-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .import-summary-compare {
+    grid-template-columns: 1fr;
+  }
+
   .weekly-item-row,
   .issue-row {
     grid-template-columns: 36px minmax(0, 1fr);
@@ -2311,10 +2404,16 @@ textarea:focus-visible {
   .data-status-summary,
   .execution-status-grid,
   .archive-candidate-grid,
+  .import-file-meta,
+  .import-validity-grid,
   .data-layer-counts,
   .weekly-item-row,
   .issue-row {
     grid-template-columns: 1fr;
+  }
+
+  .import-preview-actions button {
+    width: 100%;
   }
 
   .weekly-item-actions,

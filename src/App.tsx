@@ -243,6 +243,31 @@ type DataStatus = {
   }
 }
 
+type DataSummary = {
+  totalItems: number
+  coreItems: number
+  projectItems: number
+  actionItems: number
+  doneItems: number
+  layerCounts: Record<LayerId, number>
+}
+
+type ImportPreview = {
+  fileName: string
+  fileSize: number
+  exportedAt: string
+  version: string
+  totalItemCount: number
+  validItemCount: number
+  invalidItemCount: number
+  summary: DataSummary
+  validItems: LifeItem[]
+}
+
+type ImportAnalysisResult = {
+  preview: ImportPreview
+}
+
 type ItemInput = Partial<LifeItem> & Record<string, unknown>
 
 type AncestorNode = {
@@ -875,17 +900,21 @@ const encyclopediaSections: EncyclopediaSection[] = [
           '行動封存候選可用保守標準：已完成、有完成日期、完成超過 90 天。',
           '專案封存候選可用保守標準：已完成、有完成日期、完成超過 180 天，且底下沒有未完成行動。',
           '封存前先確認相關結果仍留在主資料中，並確認專案底下沒有仍需要推進的行動。',
+          '匯入資料前先看預覽。確認匯入檔案的版本、有效物件數、無效物件數與各層分布，再決定是否取代目前資料。',
+          '取代匯入前一定先匯出目前資料。瀏覽器本機資料一旦被取代，就應該靠這份備份檔回復，而不是期待 app 自動保留上一版。',
         ],
         mistakes: [
           '把完成的結果也大量移出主資料，導致未來回顧只剩任務紀錄，失去成果脈絡。',
           '只因為總物件數變多就急著清理，而沒有先看膨脹來源是否其實集中在完成行動。',
           '封存專案前沒有檢查底下未完成行動，造成執行承諾被藏到歷史檔案中。',
           '把封存當成刪除。封存應該是把歷史流水移到備份檔，而不是讓人生紀錄消失。',
+          '看到匯入檔案名稱正確就直接覆蓋。檔案可能是舊備份、測試資料或部分匯出，應該先看預覽數字再取代。',
         ],
         examples: [
           '如果系統有 1,200 個物件，其中原則到結果只有 250 個，行動有 800 個且 650 個已完成，真正需要控管的是完成行動。',
           '如果某個結果已完成，但它代表一季的重要交付成果，建議保留結果本身；只把底下很舊的完成行動列為封存候選。',
           '如果 JSON 大小接近 5 MB，且已完成行動超過數千筆，可以先匯出完整備份，再考慮未來使用封存功能整理執行流水。',
+          '如果匯入預覽顯示目前本機有 900 個物件、匯入檔案只有 40 個物件，先停下來確認這是不是你真的要恢復的資料，而不是誤選小型測試檔。',
         ],
       },
     ],
@@ -1045,6 +1074,8 @@ function App() {
   const [horizonStatusFilter, setHorizonStatusFilter] = useState<CalendarStatusFilter>('all')
   const [selectedCalendarItemId, setSelectedCalendarItemId] = useState('')
   const [activeEncyclopediaId, setActiveEncyclopediaId] = useState(firstEncyclopediaArticleId)
+  const [pendingImportPreview, setPendingImportPreview] = useState<ImportPreview | null>(null)
+  const [importBackupConfirmed, setImportBackupConfirmed] = useState(false)
   const [notice, setNotice] = useState('資料只保存在這台裝置的瀏覽器中。')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -1361,6 +1392,30 @@ function App() {
     setNotice('已匯出 JSON，可存到 iPhone「檔案」。')
   }
 
+  function exportCurrentBeforeImport() {
+    exportJson()
+    setImportBackupConfirmed(true)
+    setNotice('已匯出目前資料備份，可以確認取代匯入。')
+  }
+
+  function resetImportPreview() {
+    setPendingImportPreview(null)
+    setImportBackupConfirmed(false)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  function confirmImportReplace() {
+    if (!pendingImportPreview || !importBackupConfirmed || pendingImportPreview.validItemCount === 0) return
+
+    setItems(pendingImportPreview.validItems)
+    setEditingId(null)
+    setSelectedItemId('')
+    setDraft(emptyDraft(activeLayer))
+    setPanelMode('create')
+    setNotice(`已取代目前資料，匯入 ${pendingImportPreview.validItemCount} 個有效物件。`)
+    resetImportPreview()
+  }
+
   function importJson(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (!file) return
@@ -1368,12 +1423,10 @@ function App() {
     const reader = new FileReader()
     reader.onload = () => {
       try {
-        const parsed = JSON.parse(String(reader.result)) as { items?: unknown[] }
-        if (!Array.isArray(parsed.items)) throw new Error('Invalid file')
-        setItems(parsed.items.map(normalizeItem).filter(Boolean) as LifeItem[])
-        setEditingId(null)
-        setDraft(emptyDraft(activeLayer))
-        setNotice('已匯入 JSON。')
+        const result = analyzeImportFile(String(reader.result), file.name, file.size)
+        setPendingImportPreview(result.preview)
+        setImportBackupConfirmed(false)
+        setNotice('已建立匯入前預覽，尚未取代目前資料。')
       } catch {
         setNotice('匯入失敗，請確認檔案是 PPV Life OS JSON。')
       } finally {
@@ -1666,6 +1719,17 @@ function App() {
                 hidden
               />
             </div>
+
+            {pendingImportPreview && (
+              <ImportPreviewPanel
+                backupConfirmed={importBackupConfirmed}
+                currentSummary={getDataSummary(items)}
+                preview={pendingImportPreview}
+                onBackup={exportCurrentBeforeImport}
+                onCancel={resetImportPreview}
+                onConfirm={confirmImportReplace}
+              />
+            )}
 
             <PpvEncyclopedia
               activeArticleId={activeEncyclopediaId}
@@ -2618,6 +2682,101 @@ function DataStatusPanel({ items }: { items: LifeItem[] }) {
   )
 }
 
+function ImportPreviewPanel({
+  backupConfirmed,
+  currentSummary,
+  preview,
+  onBackup,
+  onCancel,
+  onConfirm,
+}: {
+  backupConfirmed: boolean
+  currentSummary: DataSummary
+  preview: ImportPreview
+  onBackup: () => void
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const canConfirm = backupConfirmed && preview.validItemCount > 0
+
+  return (
+    <section className="section-block import-preview-panel">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">匯入前預覽</p>
+          <h2>確認取代本機資料</h2>
+        </div>
+        <span className="count-pill">{preview.validItemCount} 個有效物件</span>
+      </div>
+
+      <div className="import-file-meta">
+        <ImportMeta label="檔案" value={preview.fileName} />
+        <ImportMeta label="大小" value={formatFileSize(preview.fileSize)} />
+        <ImportMeta label="匯出時間" value={preview.exportedAt || '未提供'} />
+        <ImportMeta label="資料版本" value={preview.version} />
+      </div>
+
+      <div className="import-summary-compare">
+        <DataSummaryCard title="目前本機資料" summary={currentSummary} />
+        <DataSummaryCard title="匯入檔案" summary={preview.summary} />
+      </div>
+
+      <div className="import-validity-grid">
+        <DataStatusCard label="檔案物件總數" value={formatCount(preview.totalItemCount)} />
+        <DataStatusCard label="有效物件" value={formatCount(preview.validItemCount)} />
+        <DataStatusCard label="無效物件" value={formatCount(preview.invalidItemCount)} />
+      </div>
+
+      <p className="import-warning">
+        此操作會取代目前本機資料，不是合併。不符合目前 LifeItem v3 格式的物件會被忽略。
+      </p>
+
+      <div className="import-preview-actions">
+        <button type="button" onClick={onBackup}>
+          先匯出目前資料
+        </button>
+        <button className="ghost-button" type="button" onClick={onCancel}>
+          取消
+        </button>
+        <button className="danger-button" type="button" onClick={onConfirm} disabled={!canConfirm}>
+          取代目前資料
+        </button>
+      </div>
+
+      {!backupConfirmed && (
+        <p className="import-backup-note">請先匯出目前資料備份，才可確認取代。</p>
+      )}
+      {preview.validItemCount === 0 && (
+        <p className="import-backup-note">此檔案沒有可匯入的有效物件。</p>
+      )}
+    </section>
+  )
+}
+
+function ImportMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="import-meta-item">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  )
+}
+
+function DataSummaryCard({ summary, title }: { summary: DataSummary; title: string }) {
+  return (
+    <div className="data-summary-card">
+      <h3>{title}</h3>
+      <div className="data-summary-grid">
+        <DataStatusRow label="總物件" value={formatCount(summary.totalItems)} />
+        <DataStatusRow label="核心層" value={formatCount(summary.coreItems)} />
+        <DataStatusRow label="專案" value={formatCount(summary.projectItems)} />
+        <DataStatusRow label="行動" value={formatCount(summary.actionItems)} />
+        <DataStatusRow label="已完成" value={formatCount(summary.doneItems)} />
+      </div>
+    </div>
+  )
+}
+
 function DataStatusCard({ label, value }: { label: string; value: string }) {
   return (
     <div className="data-status-card">
@@ -3535,6 +3694,48 @@ function findEncyclopediaArticle(articleId: string) {
   )
 }
 
+function analyzeImportFile(fileText: string, fileName: string, fileSize: number): ImportAnalysisResult {
+  const parsed = JSON.parse(fileText) as { exportedAt?: unknown; items?: unknown[]; version?: unknown }
+  if (!Array.isArray(parsed.items)) throw new Error('Invalid file')
+
+  const validItems = parsed.items.map(normalizeItem).filter(Boolean) as LifeItem[]
+  const version =
+    typeof parsed.version === 'number' || typeof parsed.version === 'string'
+      ? `v${parsed.version}`
+      : '未提供'
+
+  return {
+    preview: {
+      fileName,
+      fileSize,
+      exportedAt: typeof parsed.exportedAt === 'string' ? parsed.exportedAt : '',
+      version,
+      totalItemCount: parsed.items.length,
+      validItemCount: validItems.length,
+      invalidItemCount: parsed.items.length - validItems.length,
+      summary: getDataSummary(validItems),
+      validItems,
+    },
+  }
+}
+
+function getDataSummary(items: LifeItem[]): DataSummary {
+  const layerCounts = Object.fromEntries(layers.map((layer) => [layer.id, 0])) as Record<LayerId, number>
+
+  for (const item of items) {
+    layerCounts[item.layer] += 1
+  }
+
+  return {
+    totalItems: items.length,
+    coreItems: coreLayerIds.reduce((total, layer) => total + layerCounts[layer], 0),
+    projectItems: layerCounts.project,
+    actionItems: layerCounts.action,
+    doneItems: items.filter((item) => item.status === 'done').length,
+    layerCounts,
+  }
+}
+
 function getDataStatus(items: LifeItem[]): DataStatus {
   const coreCounts = Object.fromEntries(layers.map((layer) => [layer.id, 0])) as Record<LayerId, number>
 
@@ -3609,6 +3810,10 @@ function formatBytes(bytes: number) {
   if (kilobytes < 1024) return `${formatCompactNumber(kilobytes)} KB`
 
   return `${formatCompactNumber(kilobytes / 1024)} MB`
+}
+
+function formatFileSize(bytes: number) {
+  return formatBytes(bytes)
 }
 
 function formatCount(value: number) {
